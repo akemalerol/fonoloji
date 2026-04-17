@@ -4,21 +4,17 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowRight, CheckCircle2, RefreshCw, Shield } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 
 export function VerifyForm({ initialEmail, devCode }: { initialEmail: string; devCode?: string }) {
   const router = useRouter();
   const [email] = React.useState(initialEmail);
-  const [digits, setDigits] = React.useState<string[]>(Array(6).fill(''));
+  const [code, setCode] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [resending, setResending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
   const [cooldown, setCooldown] = React.useState(0);
-  const inputsRef = React.useRef<Array<HTMLInputElement | null>>([]);
-
-  React.useEffect(() => {
-    inputsRef.current[0]?.focus();
-  }, []);
 
   React.useEffect(() => {
     if (cooldown <= 0) return;
@@ -26,41 +22,12 @@ export function VerifyForm({ initialEmail, devCode }: { initialEmail: string; de
     return () => clearInterval(t);
   }, [cooldown]);
 
-  const code = digits.join('');
   const isComplete = code.length === 6 && /^\d{6}$/.test(code);
 
   React.useEffect(() => {
     if (isComplete && !loading && !success) submit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isComplete]);
-
-  function setDigit(idx: number, v: string) {
-    const clean = v.replace(/\D/g, '').slice(-1);
-    setDigits((prev) => {
-      const next = [...prev];
-      next[idx] = clean;
-      return next;
-    });
-    if (clean && idx < 5) inputsRef.current[idx + 1]?.focus();
-  }
-
-  function onPaste(e: React.ClipboardEvent<HTMLInputElement>) {
-    e.preventDefault();
-    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-    if (!pasted) return;
-    const arr = pasted.split('').concat(Array(6).fill('')).slice(0, 6);
-    setDigits(arr);
-    const lastIdx = Math.min(pasted.length - 1, 5);
-    inputsRef.current[lastIdx]?.focus();
-  }
-
-  function onKeyDown(idx: number, e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Backspace' && !digits[idx] && idx > 0) {
-      inputsRef.current[idx - 1]?.focus();
-    }
-    if (e.key === 'ArrowLeft' && idx > 0) inputsRef.current[idx - 1]?.focus();
-    if (e.key === 'ArrowRight' && idx < 5) inputsRef.current[idx + 1]?.focus();
-  }
 
   async function submit() {
     if (!email || !isComplete) return;
@@ -76,8 +43,7 @@ export function VerifyForm({ initialEmail, devCode }: { initialEmail: string; de
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError((data.error as string) || 'Kod hatalı');
-        setDigits(Array(6).fill(''));
-        inputsRef.current[0]?.focus();
+        setCode('');
         return;
       }
       setSuccess(true);
@@ -125,28 +91,25 @@ export function VerifyForm({ initialEmail, devCode }: { initialEmail: string; de
         </div>
       )}
 
-      <div className="flex justify-center gap-2" onPaste={onPaste}>
-        {digits.map((d, i) => (
-          <motion.input
-            key={i}
-            ref={(el) => {
-              inputsRef.current[i] = el;
-            }}
-            inputMode="numeric"
-            pattern="[0-9]*"
-            maxLength={1}
-            value={d}
-            onChange={(e) => setDigit(i, e.target.value)}
-            onKeyDown={(e) => onKeyDown(i, e)}
-            disabled={loading || success}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 * i, type: 'spring', stiffness: 300 }}
-            className={`h-14 w-11 rounded-xl border border-white/[0.07] bg-white/[0.04] text-center font-mono text-2xl text-foreground outline-none transition-all focus:border-brand-500/50 focus:bg-white/[0.08] ${
-              success ? 'border-emerald-500/50 bg-emerald-500/10' : ''
-            }`}
-          />
-        ))}
+      <div className="flex justify-center">
+        <InputOTP
+          autoFocus
+          maxLength={6}
+          value={code}
+          onChange={(v) => setCode(v.replace(/\D/g, ''))}
+          disabled={loading || success}
+          containerClassName="gap-2"
+        >
+          <InputOTPGroup className="gap-2">
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <InputOTPSlot
+                key={i}
+                index={i}
+                className={success ? 'border-emerald-500/50 bg-emerald-500/10' : ''}
+              />
+            ))}
+          </InputOTPGroup>
+        </InputOTP>
       </div>
 
       <AnimatePresence>

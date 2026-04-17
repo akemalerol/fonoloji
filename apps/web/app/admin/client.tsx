@@ -1,11 +1,19 @@
 'use client';
 
-import { Activity, Ban, Check, CheckCircle2, ClipboardCopy, ExternalLink, Gauge, Key, Loader2, Mail, MailPlus, Reply, Send, ShieldOff, Sparkles, Trash2, Twitter, UserCheck, UserX, Users as UsersIcon, Wallet, XCircle } from 'lucide-react';
+import { Activity, Ban, Check, CheckCircle2, ClipboardCopy, ExternalLink, Gauge, Key, Loader2, Mail, MailPlus, MoreVertical, Reply, Send, ShieldOff, Sparkles, Trash2, Twitter, UserCheck, UserX, Users as UsersIcon, Wallet, XCircle } from 'lucide-react';
 import * as React from 'react';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/material-dropdown';
 import { cn } from '@/lib/utils';
 
 interface Stats {
@@ -416,32 +424,48 @@ export function AdminClient({
                     {new Date(u.created_at).toLocaleDateString('tr-TR')}
                   </td>
                   <td className="py-3 pr-4 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => toggleVerify(u)}
-                        title={u.email_verified_at ? 'Doğrulamayı iptal et' : 'Manuel doğrula'}
-                      >
-                        {u.email_verified_at ? (
-                          <XCircle className="h-3.5 w-3.5 text-amber-400" />
-                        ) : (
-                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-                        )}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => toggleDisable(u)}
-                        title={u.disabled_at ? 'Aktifleştir' : 'Pasife al'}
-                      >
-                        {u.disabled_at ? (
-                          <UserCheck className="h-3.5 w-3.5 text-emerald-400" />
-                        ) : (
-                          <Ban className="h-3.5 w-3.5 text-loss" />
-                        )}
-                      </Button>
-                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="sm" variant="ghost" aria-label="Aksiyonlar">
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-56">
+                        <DropdownMenuLabel>{u.email}</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={() => setEditingLimits(u)}>
+                          <Gauge className="h-4 w-4" />
+                          Özel limit tanımla
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => toggleVerify(u)}>
+                          {u.email_verified_at ? (
+                            <>
+                              <XCircle className="h-4 w-4 text-amber-400" />
+                              Doğrulamayı iptal et
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                              Manuel doğrula
+                            </>
+                          )}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={() => toggleDisable(u)}>
+                          {u.disabled_at ? (
+                            <>
+                              <UserCheck className="h-4 w-4 text-emerald-400" />
+                              Aktifleştir
+                            </>
+                          ) : (
+                            <>
+                              <Ban className="h-4 w-4 text-loss" />
+                              Pasife al
+                            </>
+                          )}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </td>
                 </tr>
               ))}
