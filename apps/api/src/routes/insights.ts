@@ -468,8 +468,12 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
              WHEN 'GOLDUSD_OZ' THEN 6
              WHEN 'SILVERTRY_GR' THEN 7
              WHEN 'SILVERUSD_OZ' THEN 8
-             WHEN 'BTCUSD' THEN 9
-             WHEN 'ETHUSD' THEN 10
+             WHEN 'NDX' THEN 9
+             WHEN 'SPX' THEN 10
+             WHEN 'FTSE' THEN 11
+             WHEN 'DAX' THEN 12
+             WHEN 'BTCUSD' THEN 13
+             WHEN 'ETHUSD' THEN 14
              ELSE 99
            END`,
       )

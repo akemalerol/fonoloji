@@ -2,6 +2,7 @@
 
 import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
 import * as React from 'react';
+import { Marquee } from './marquee';
 
 interface Ticker {
   symbol: string;
@@ -24,6 +25,10 @@ const FORMAT: Record<string, (v: number) => string> = {
   BTCUSD: (v) => `$${v.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}`,
   ETHUSD: (v) => `$${v.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}`,
   BIST100: (v) => v.toLocaleString('tr-TR', { maximumFractionDigits: 0 }),
+  NDX: (v) => v.toLocaleString('tr-TR', { maximumFractionDigits: 0 }),
+  SPX: (v) => v.toLocaleString('tr-TR', { maximumFractionDigits: 0 }),
+  FTSE: (v) => v.toLocaleString('tr-TR', { maximumFractionDigits: 0 }),
+  DAX: (v) => v.toLocaleString('tr-TR', { maximumFractionDigits: 0 }),
 };
 
 const SHORT_NAME: Record<string, string> = {
@@ -37,6 +42,10 @@ const SHORT_NAME: Record<string, string> = {
   BTCUSD: 'Bitcoin',
   ETHUSD: 'Ethereum',
   BIST100: 'BIST 100',
+  NDX: 'Nasdaq 100',
+  SPX: 'S&P 500',
+  FTSE: 'FTSE 100',
+  DAX: 'DAX',
 };
 
 /**
@@ -128,6 +137,30 @@ const THEMES: Record<string, Theme> = {
     value: 'bg-gradient-to-b from-slate-100 to-slate-300 bg-clip-text text-transparent',
     dot: SILVER_DOT,
   },
+  NDX: {
+    chip: 'bg-gradient-to-r from-cyan-500/[0.08] to-transparent ring-1 ring-cyan-400/20',
+    label: 'font-semibold text-cyan-200/90',
+    value: 'bg-gradient-to-b from-white to-cyan-100 bg-clip-text text-transparent',
+    dot: <Glyph letter="N" gradient="bg-gradient-to-br from-cyan-300 to-cyan-700" />,
+  },
+  SPX: {
+    chip: 'bg-gradient-to-r from-blue-500/[0.08] to-transparent ring-1 ring-blue-400/20',
+    label: 'font-semibold text-blue-200/90',
+    value: 'bg-gradient-to-b from-white to-blue-100 bg-clip-text text-transparent',
+    dot: <Glyph letter="S" gradient="bg-gradient-to-br from-blue-300 to-blue-700" />,
+  },
+  FTSE: {
+    chip: 'bg-gradient-to-r from-rose-500/[0.08] to-transparent ring-1 ring-rose-400/20',
+    label: 'font-semibold text-rose-200/90',
+    value: 'bg-gradient-to-b from-white to-rose-100 bg-clip-text text-transparent',
+    dot: <Glyph letter="F" gradient="bg-gradient-to-br from-rose-300 to-rose-700" />,
+  },
+  DAX: {
+    chip: 'bg-gradient-to-r from-yellow-500/[0.08] to-transparent ring-1 ring-yellow-400/20',
+    label: 'font-semibold text-yellow-200/90',
+    value: 'bg-gradient-to-b from-white to-yellow-100 bg-clip-text text-transparent',
+    dot: <Glyph letter="D" gradient="bg-gradient-to-br from-yellow-300 to-yellow-700" />,
+  },
   BTCUSD: {
     chip: 'bg-gradient-to-r from-orange-500/[0.1] to-transparent ring-1 ring-orange-400/25',
     label: 'font-semibold text-orange-200/95',
@@ -207,49 +240,53 @@ export function LiveTicker({
           ? `${Math.round(agoSec / 60)}dk önce`
           : `${Math.round(agoSec / 3600)}sa önce`;
 
+  const renderChip = (t: Ticker) => {
+    const fmt = FORMAT[t.symbol] ?? ((v: number) => v.toFixed(2));
+    const up = (t.change_pct ?? 0) >= 0;
+    const f = flash[t.symbol];
+    const theme = THEMES[t.symbol] ?? FALLBACK_THEME;
+    return (
+      <div
+        key={t.symbol}
+        className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-sm transition-colors ${theme.chip} ${
+          f === 'up' ? '!bg-gain/15 !ring-gain/40' : f === 'down' ? '!bg-loss/15 !ring-loss/40' : ''
+        }`}
+      >
+        {theme.dot}
+        <span className={`text-[10.5px] uppercase tracking-wider ${theme.label}`}>
+          {SHORT_NAME[t.symbol] ?? t.name}
+        </span>
+        <span className={`font-mono tabular-nums font-semibold ${theme.value}`}>{fmt(t.value)}</span>
+        {t.change_pct !== null && (
+          <span
+            className={`inline-flex items-center gap-0.5 font-mono text-[10.5px] ${
+              up ? 'text-gain' : 'text-loss'
+            }`}
+          >
+            {up ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+            %{(t.change_pct * 100).toFixed(2)}
+          </span>
+        )}
+      </div>
+    );
+  };
+
   return (
-    <div className="panel px-3 py-2.5">
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+    <div className="panel relative overflow-hidden border-x-0 border-t-0 bg-background/40 py-2 backdrop-blur-sm">
+      <div className="flex items-center gap-3">
+        <div className="relative z-10 flex shrink-0 items-center gap-1.5 border-r border-border/50 pl-3 pr-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
           <span className="relative flex h-1.5 w-1.5">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
             <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
           </span>
           {agoSec !== null ? agoText : 'canlı'}
         </div>
-        {tickers.map((t) => {
-          const fmt = FORMAT[t.symbol] ?? ((v: number) => v.toFixed(2));
-          const up = (t.change_pct ?? 0) >= 0;
-          const f = flash[t.symbol];
-          const theme = THEMES[t.symbol] ?? FALLBACK_THEME;
-          return (
-            <div
-              key={t.symbol}
-              className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-sm transition-colors ${theme.chip} ${
-                f === 'up' ? '!bg-gain/15 !ring-gain/40' : f === 'down' ? '!bg-loss/15 !ring-loss/40' : ''
-              }`}
-            >
-              {theme.dot}
-              <span className={`text-[10.5px] uppercase tracking-wider ${theme.label}`}>
-                {SHORT_NAME[t.symbol] ?? t.name}
-              </span>
-              <span className={`font-mono tabular-nums font-semibold ${theme.value}`}>
-                {fmt(t.value)}
-              </span>
-              {t.change_pct !== null && (
-                <span
-                  className={`inline-flex items-center gap-0.5 font-mono text-[10.5px] ${
-                    up ? 'text-gain' : 'text-loss'
-                  }`}
-                >
-                  {up ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                  %{(t.change_pct * 100).toFixed(2)}
-                </span>
-              )}
-            </div>
-          );
-        })}
+        <Marquee pauseOnHover className="flex-1">
+          {tickers.map(renderChip)}
+        </Marquee>
       </div>
+      {/* Fade edges so tickers scroll in/out gracefully */}
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-16 bg-gradient-to-l from-background to-transparent" />
     </div>
   );
 }

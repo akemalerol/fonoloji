@@ -89,36 +89,10 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
     }
   }, { timezone: 'Europe/Istanbul' });
 
-  // Live market tickers — global FX açılış penceresi boyunca "anlık" çek.
-  // Pencere: Pazar 23:59 TR → Cumartesi 01:00 TR (FX piyasasının haftalık açık saatleri).
-  // Pencere dışı (Cmt 01:00 → Pzr 23:59) tüm piyasalar kapalı, ingest no-op.
-  const getTrNow = (): { day: number; hour: number; minute: number } => {
-    const parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Europe/Istanbul',
-      weekday: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).formatToParts(new Date());
-    const wd = parts.find((p) => p.type === 'weekday')?.value ?? 'Mon';
-    const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-    return {
-      day: dayMap[wd] ?? 1,
-      hour: Number(parts.find((p) => p.type === 'hour')?.value ?? '0'),
-      minute: Number(parts.find((p) => p.type === 'minute')?.value ?? '0'),
-    };
-  };
-  const isLiveWindow = (): boolean => {
-    const { day, hour, minute } = getTrNow();
-    if (day >= 1 && day <= 5) return true; // Pzt-Cum: sürekli açık
-    if (day === 6 && hour < 1) return true; // Cumartesi 00:00-01:00
-    if (day === 0 && hour === 23 && minute >= 59) return true; // Pazar 23:59
-    return false;
-  };
-
+  // Live market tickers — 24/7. İngest içinde her asset kendi piyasa saatine
+  // göre gate'liyor (BTC/ETH her zaman, FX hafta içi, borsalar yerel saatlerine göre).
   let liveMarketRunning = false;
   const liveMarketTick = async () => {
-    if (!isLiveWindow()) return;
     if (liveMarketRunning) return;
     liveMarketRunning = true;
     try {
@@ -131,14 +105,11 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
   };
   let liveMarketTimer: NodeJS.Timeout | null = null;
   const scheduleNextTick = () => {
-    // Pencere içindeyken 5s (Yahoo rate limit içinde), dışında 30dk (uyur).
-    const delay = isLiveWindow() ? 5_000 : 30 * 60_000;
     liveMarketTimer = setTimeout(async () => {
       await liveMarketTick();
       scheduleNextTick();
-    }, delay);
+    }, 5_000);
   };
-  // Initial seed on boot (so page has values immediately), then start loop
   setTimeout(() => {
     liveMarketTick().finally(() => scheduleNextTick());
   }, 3000);

@@ -90,20 +90,73 @@ interface Ticker {
   source: string;
 }
 
+/**
+ * Check whether "now" falls inside a stock exchange session, with a few
+ * minutes of lead/lag so delayed feeds still update right at the edges.
+ * DST-safe (uses Intl with the exchange's local TZ).
+ */
+function isMarketOpen(
+  tz: string,
+  openH: number,
+  openM: number,
+  closeH: number,
+  closeM: number,
+  openLeadMin = 5,
+  closeLagMin = 20,
+): boolean {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz,
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date());
+  const wd = parts.find((p) => p.type === 'weekday')?.value ?? 'Mon';
+  const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const day = dayMap[wd] ?? 1;
+  if (day === 0 || day === 6) return false; // weekend closed
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? 0);
+  const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? 0);
+  const nowMin = hour * 60 + minute;
+  const openMin = openH * 60 + openM - openLeadMin;
+  const closeMin = closeH * 60 + closeM + closeLagMin;
+  return nowMin >= openMin && nowMin <= closeMin;
+}
+
 export async function runLiveMarketIngest(): Promise<{ updated: number }> {
   const db = getDb();
   const tickers: Ticker[] = [];
 
-  // Yahoo: FX, BIST, precious metals, crypto — parallel
-  const [bist, usd, eur, gbp, gold, silver, btc, eth] = await Promise.all([
-    fetchYahooQuote('XU100.IS'),
-    fetchYahooQuote('USDTRY=X'),
-    fetchYahooQuote('EURTRY=X'),
-    fetchYahooQuote('GBPTRY=X'),
-    fetchYahooQuote('GC=F'),
-    fetchYahooQuote('SI=F'),
-    fetchYahooQuote('BTC-USD'),
-    fetchYahooQuote('ETH-USD'),
+  // Per-asset market windows. Skipping a fetch just means DB keeps last known
+  // value — Yahoo free tier is delayed ~15min anyway, +20min lag captures the
+  // final tick after close.
+  const wantBist = isMarketOpen('Europe/Istanbul', 9, 55, 18, 10);
+  const wantNdx = isMarketOpen('America/New_York', 9, 30, 16, 0); // NASDAQ + NYSE share hours
+  const wantFtse = isMarketOpen('Europe/London', 8, 0, 16, 30);
+  const wantDax = isMarketOpen('Europe/Berlin', 9, 0, 17, 30);
+  // FX + metals: essentially 24h Mon-Fri, skip true weekend only.
+  const wd = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Istanbul', weekday: 'short' }).format(new Date());
+  const isFxWeekend = wd === 'Sat' || wd === 'Sun';
+  const wantFx = !isFxWeekend;
+  // Crypto trades 24/7 — always fetch.
+  const wantCrypto = true;
+
+  const maybe = <T,>(cond: boolean, fn: () => Promise<T | null>): Promise<T | null> =>
+    cond ? fn() : Promise.resolve(null);
+
+  const [bist, usd, eur, gbp, gold, silver, btc, eth, ndx, spx, ftse, dax] = await Promise.all([
+    maybe(wantBist, () => fetchYahooQuote('XU100.IS')),
+    maybe(wantFx, () => fetchYahooQuote('USDTRY=X')),
+    maybe(wantFx, () => fetchYahooQuote('EURTRY=X')),
+    maybe(wantFx, () => fetchYahooQuote('GBPTRY=X')),
+    maybe(wantFx, () => fetchYahooQuote('GC=F')),
+    maybe(wantFx, () => fetchYahooQuote('SI=F')),
+    maybe(wantCrypto, () => fetchYahooQuote('BTC-USD')),
+    maybe(wantCrypto, () => fetchYahooQuote('ETH-USD')),
+    maybe(wantNdx, () => fetchYahooQuote('^NDX')),
+    maybe(wantNdx, () => fetchYahooQuote('^GSPC')),
+    maybe(wantFtse, () => fetchYahooQuote('^FTSE')),
+    maybe(wantDax, () => fetchYahooQuote('^GDAXI')),
   ]);
 
   if (bist) tickers.push({ symbol: 'BIST100', name: 'BIST 100', value: bist.price, previous: bist.prevClose, source: 'yahoo' });
@@ -141,7 +194,13 @@ export async function runLiveMarketIngest(): Promise<{ updated: number }> {
     });
   }
 
-  // Crypto
+  // Global stock indices
+  if (ndx) tickers.push({ symbol: 'NDX', name: 'Nasdaq 100', value: ndx.price, previous: ndx.prevClose, source: 'yahoo' });
+  if (spx) tickers.push({ symbol: 'SPX', name: 'S&P 500', value: spx.price, previous: spx.prevClose, source: 'yahoo' });
+  if (ftse) tickers.push({ symbol: 'FTSE', name: 'FTSE 100', value: ftse.price, previous: ftse.prevClose, source: 'yahoo' });
+  if (dax) tickers.push({ symbol: 'DAX', name: 'DAX', value: dax.price, previous: dax.prevClose, source: 'yahoo' });
+
+  // Crypto — 24/7
   if (btc) tickers.push({ symbol: 'BTCUSD', name: 'Bitcoin', value: btc.price, previous: btc.prevClose, source: 'yahoo' });
   if (eth) tickers.push({ symbol: 'ETHUSD', name: 'Ethereum', value: eth.price, previous: eth.prevClose, source: 'yahoo' });
 

@@ -52,6 +52,11 @@ export default async function HomePage() {
 
   return (
     <>
+      {/* GLOBAL LIVE MARKET STRIP — right under the header */}
+      {liveMarket.items.length > 0 && (
+        <LiveTicker tickers={liveMarket.items} updatedAt={liveMarket.updated_at} />
+      )}
+
       {/* HERO */}
       <section className="relative isolate overflow-hidden">
         <RetroGrid />
@@ -145,11 +150,6 @@ export default async function HomePage() {
             <CpiStat cpi={cpi} />
           </div>
 
-          {liveMarket.items.length > 0 && (
-            <div className="mx-auto mt-4 max-w-5xl">
-              <LiveTicker tickers={liveMarket.items} updatedAt={liveMarket.updated_at} />
-            </div>
-          )}
         </div>
       </section>
 
