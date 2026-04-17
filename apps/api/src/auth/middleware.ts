@@ -53,52 +53,73 @@ export async function requireApiKey(req: FastifyRequest, reply: FastifyReply): P
   }
 
   const plan = planFor(user.plan);
+  // Per-user overrides win over plan defaults.
+  const monthlyLimit = user.custom_monthly_quota ?? plan.monthlyQuota;
+  const dailyLimit = user.custom_daily_quota ?? plan.dailyQuota;
+  const rpmLimit = user.custom_rpm ?? plan.rateLimitPerMinute;
 
-  // Monthly quota check
   const month = monthKey();
-  const row = db
+  const day = dayKey();
+
+  const monthRow = db
     .prepare(`SELECT count FROM usage_counters WHERE key_id = ? AND period = ?`)
     .get(record.id, month) as { count: number } | undefined;
-  const monthlyCount = row?.count ?? 0;
-  if (monthlyCount >= plan.monthlyQuota) {
+  const monthlyCount = monthRow?.count ?? 0;
+
+  const dayRow = db
+    .prepare(`SELECT count FROM usage_counters WHERE key_id = ? AND period = ?`)
+    .get(record.id, day) as { count: number } | undefined;
+  const dailyCount = dayRow?.count ?? 0;
+
+  if (monthlyCount >= monthlyLimit) {
     reply.headers({
-      'x-ratelimit-limit-monthly': plan.monthlyQuota,
+      'x-ratelimit-limit-monthly': monthlyLimit,
       'x-ratelimit-remaining-monthly': 0,
     });
-    reply
-      .code(429)
-      .send({
-        error: `Aylık ${plan.monthlyQuota.toLocaleString('tr-TR')} istek kotası doldu. Planınızı yükseltin.`,
-        plan: plan.id,
-        upgradeUrl: '/fiyatlandirma',
-      });
+    reply.code(429).send({
+      error: `Aylık ${monthlyLimit.toLocaleString('tr-TR')} istek kotası doldu.`,
+      plan: plan.id,
+      contact: '/iletisim',
+    });
     return;
   }
 
-  // Per-minute rate limit
-  const rl = consume(record.id, plan.rateLimitPerMinute);
+  if (dailyCount >= dailyLimit) {
+    reply.headers({
+      'x-ratelimit-limit-daily': dailyLimit,
+      'x-ratelimit-remaining-daily': 0,
+    });
+    reply.code(429).send({
+      error: `Günlük ${dailyLimit.toLocaleString('tr-TR')} istek kap'ı aşıldı. Yarın sıfırlanır.`,
+      plan: plan.id,
+      contact: '/iletisim',
+    });
+    return;
+  }
+
+  const rl = consume(record.id, rpmLimit);
   reply.headers({
-    'x-ratelimit-limit': plan.rateLimitPerMinute,
+    'x-ratelimit-limit': rpmLimit,
     'x-ratelimit-remaining': rl.remaining,
     'x-ratelimit-reset': Math.ceil(rl.resetInMs / 1000),
-    'x-ratelimit-limit-monthly': plan.monthlyQuota,
-    'x-ratelimit-remaining-monthly': Math.max(0, plan.monthlyQuota - monthlyCount - 1),
+    'x-ratelimit-limit-daily': dailyLimit,
+    'x-ratelimit-remaining-daily': Math.max(0, dailyLimit - dailyCount - 1),
+    'x-ratelimit-limit-monthly': monthlyLimit,
+    'x-ratelimit-remaining-monthly': Math.max(0, monthlyLimit - monthlyCount - 1),
   });
   if (!rl.allowed) {
     reply.header('retry-after', Math.ceil(rl.resetInMs / 1000));
     reply.code(429).send({
-      error: `Dakikada ${plan.rateLimitPerMinute} istek sınırı aşıldı.`,
+      error: `Dakikada ${rpmLimit} istek sınırı aşıldı.`,
       retryAfterSec: Math.ceil(rl.resetInMs / 1000),
     });
     return;
   }
 
-  // Increment & touch (both monthly and daily buckets)
   const incr = db.prepare(
     `INSERT INTO usage_counters (key_id, period, count) VALUES (?, ?, 1)
      ON CONFLICT(key_id, period) DO UPDATE SET count = count + 1`,
   );
-  const day = dayKey();
   db.transaction(() => {
     incr.run(record.id, month);
     incr.run(record.id, day);

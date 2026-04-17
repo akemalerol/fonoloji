@@ -2,7 +2,7 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { getDb } from '../db/index.js';
 import { planFor, PLANS } from '../auth/plans.js';
-import { findUserById, setDisabled, setEmailVerified, setPlan, type UserRecord } from '../auth/users.js';
+import { findUserById, setCustomLimits, setDisabled, setEmailVerified, setPlan, type UserRecord } from '../auth/users.js';
 import { sendAdminBroadcast, sendContactReply } from '../services/mail.js';
 import { generateTweet, postTweet, queueTweet, type TweetContext } from '../services/x.js';
 
@@ -90,6 +90,7 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
     const rows = db
       .prepare(
         `SELECT u.id, u.email, u.name, u.plan, u.role, u.created_at, u.email_verified_at,
+                u.custom_monthly_quota, u.custom_daily_quota, u.custom_rpm, u.limit_note,
                 (SELECT COUNT(*) FROM api_keys k WHERE k.user_id = u.id AND k.revoked_at IS NULL) as key_count,
                 (SELECT COALESCE(SUM(uc.count), 0) FROM usage_counters uc
                  JOIN api_keys k ON k.id = uc.key_id
@@ -149,6 +150,31 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
     if (!user) return reply.code(404).send({ error: 'Kullanıcı bulunamadı' });
     setPlan(db, id, parsed.data.plan);
     return { ok: true, plan: parsed.data.plan };
+  });
+
+  const limitsSchema = z.object({
+    monthlyQuota: z.number().int().min(0).max(10_000_000).nullable(),
+    dailyQuota: z.number().int().min(0).max(1_000_000).nullable(),
+    rpm: z.number().int().min(0).max(10_000).nullable(),
+    note: z.string().max(200).nullable(),
+  });
+
+  app.post('/users/:id/limits', async (req, reply) => {
+    const id = Number((req.params as { id: string }).id);
+    const parsed = limitsSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'Geçersiz limit değerleri', details: parsed.error.flatten() });
+    const db = getDb();
+    const user = findUserById(db, id);
+    if (!user) return reply.code(404).send({ error: 'Kullanıcı bulunamadı' });
+    setCustomLimits(db, id, parsed.data);
+    const fresh = findUserById(db, id)!;
+    return {
+      ok: true,
+      custom_monthly_quota: fresh.custom_monthly_quota,
+      custom_daily_quota: fresh.custom_daily_quota,
+      custom_rpm: fresh.custom_rpm,
+      limit_note: fresh.limit_note,
+    };
   });
 
   app.get('/keys', async () => {

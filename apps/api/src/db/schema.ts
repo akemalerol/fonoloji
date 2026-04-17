@@ -359,6 +359,11 @@ const ADDITIONAL_COLUMNS: Array<{ table: string; column: string; type: string }>
   { table: 'users', column: 'email_verified_at', type: 'INTEGER' },
   // Admin: manually disable a user
   { table: 'users', column: 'disabled_at', type: 'INTEGER' },
+  // Per-user custom limit overrides (NULL = fall back to plan default)
+  { table: 'users', column: 'custom_monthly_quota', type: 'INTEGER' },
+  { table: 'users', column: 'custom_daily_quota', type: 'INTEGER' },
+  { table: 'users', column: 'custom_rpm', type: 'INTEGER' },
+  { table: 'users', column: 'limit_note', type: 'TEXT' },
 ];
 
 export function applySchema(db: Database): void {

@@ -1,6 +1,6 @@
 'use client';
 
-import { Activity, Ban, Check, CheckCircle2, ClipboardCopy, ExternalLink, Key, Loader2, Mail, MailPlus, Reply, Send, ShieldOff, Sparkles, Trash2, Twitter, UserCheck, UserX, Users as UsersIcon, Wallet, XCircle } from 'lucide-react';
+import { Activity, Ban, Check, CheckCircle2, ClipboardCopy, ExternalLink, Gauge, Key, Loader2, Mail, MailPlus, Reply, Send, ShieldOff, Sparkles, Trash2, Twitter, UserCheck, UserX, Users as UsersIcon, Wallet, XCircle } from 'lucide-react';
 import * as React from 'react';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +25,10 @@ interface User {
   usage_month: number;
   email_verified_at: number | null;
   disabled_at: number | null;
+  custom_monthly_quota: number | null;
+  custom_daily_quota: number | null;
+  custom_rpm: number | null;
+  limit_note: string | null;
 }
 
 interface KeyRow {
@@ -73,6 +77,7 @@ export function AdminClient({
   const [tab, setTab] = React.useState<'users' | 'keys' | 'messages' | 'mail' | 'x'>('users');
   const [q, setQ] = React.useState('');
   const [openMsg, setOpenMsg] = React.useState<Message | null>(null);
+  const [editingLimits, setEditingLimits] = React.useState<User | null>(null);
 
   React.useEffect(() => {
     if (tab === 'messages') loadMessages();
@@ -143,6 +148,23 @@ export function AdminClient({
       body: JSON.stringify({ plan }),
     });
     if (res.ok) await refresh();
+  }
+
+  async function saveLimits(
+    userId: number,
+    limits: { monthlyQuota: number | null; dailyQuota: number | null; rpm: number | null; note: string | null },
+  ): Promise<boolean> {
+    const res = await fetch(`/admin-api/users/${userId}/limits`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(limits),
+    });
+    if (res.ok) {
+      await refresh();
+      return true;
+    }
+    return false;
   }
 
   async function revokeKey(id: number) {
@@ -308,6 +330,7 @@ export function AdminClient({
                 <th className="py-3 text-left font-medium">E-posta</th>
                 <th className="py-3 text-left font-medium">İsim</th>
                 <th className="py-3 text-left font-medium">Plan</th>
+                <th className="py-3 text-left font-medium">Limit</th>
                 <th className="py-3 text-left font-medium">Rol</th>
                 <th className="py-3 text-right font-medium">Anahtar</th>
                 <th className="py-3 text-right font-medium">Ay kullanım</th>
@@ -357,6 +380,26 @@ export function AdminClient({
                         </option>
                       ))}
                     </select>
+                  </td>
+                  <td className="py-3">
+                    {u.custom_monthly_quota !== null || u.custom_daily_quota !== null || u.custom_rpm !== null ? (
+                      <button
+                        onClick={() => setEditingLimits(u)}
+                        title={u.limit_note ?? 'Özel limit tanımlı'}
+                        className="inline-flex items-center gap-1 rounded border border-brand-500/40 bg-brand-500/10 px-1.5 py-0.5 font-mono text-[10px] text-brand-300 hover:bg-brand-500/20"
+                      >
+                        <Gauge className="h-3 w-3" />
+                        {[u.custom_rpm && `${u.custom_rpm}/dk`, u.custom_daily_quota && `${(u.custom_daily_quota / 1000).toFixed(0)}k/g`]
+                          .filter(Boolean).join(' · ') || 'özel'}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setEditingLimits(u)}
+                        className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/70 hover:text-foreground"
+                      >
+                        <Gauge className="h-3 w-3" /> tanımla
+                      </button>
+                    )}
                   </td>
                   <td className="py-3">
                     {u.role === 'admin' ? (
@@ -519,6 +562,176 @@ export function AdminClient({
         /* X (Tweet) composer + queue */
         <XComposer />
       )}
+
+      {editingLimits && (
+        <LimitsModal
+          user={editingLimits}
+          onClose={() => setEditingLimits(null)}
+          onSave={async (limits) => {
+            const ok = await saveLimits(editingLimits.id, limits);
+            if (ok) setEditingLimits(null);
+            return ok;
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function LimitsModal({
+  user,
+  onClose,
+  onSave,
+}: {
+  user: User;
+  onClose: () => void;
+  onSave: (limits: {
+    monthlyQuota: number | null;
+    dailyQuota: number | null;
+    rpm: number | null;
+    note: string | null;
+  }) => Promise<boolean>;
+}) {
+  const [monthly, setMonthly] = React.useState(user.custom_monthly_quota?.toString() ?? '');
+  const [daily, setDaily] = React.useState(user.custom_daily_quota?.toString() ?? '');
+  const [rpm, setRpm] = React.useState(user.custom_rpm?.toString() ?? '');
+  const [note, setNote] = React.useState(user.limit_note ?? '');
+  const [saving, setSaving] = React.useState(false);
+
+  const parse = (v: string): number | null => {
+    const t = v.trim();
+    if (!t) return null;
+    const n = Number(t);
+    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
+  };
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await onSave({
+        monthlyQuota: parse(monthly),
+        dailyQuota: parse(daily),
+        rpm: parse(rpm),
+        note: note.trim() || null,
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleReset() {
+    setSaving(true);
+    try {
+      await onSave({ monthlyQuota: null, dailyQuota: null, rpm: null, note: null });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-1 flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
+          <Gauge className="h-3.5 w-3.5 text-brand-400" /> Özel limit tanımla
+        </div>
+        <div className="mb-5 font-mono text-sm">{user.email}</div>
+
+        <p className="mb-4 text-xs text-muted-foreground">
+          Boş bırakılırsa free planın varsayılan limiti kullanılır (60/dk · 3.000/gün · 30.000/ay).
+          Tanımlanan alanlar kullanıcının default'unu override eder.
+        </p>
+
+        <div className="space-y-3">
+          <LimitField
+            label="Dakikada"
+            suffix="istek/dk"
+            placeholder="60"
+            value={rpm}
+            onChange={setRpm}
+          />
+          <LimitField
+            label="Günlük kap"
+            suffix="istek/gün"
+            placeholder="3000"
+            value={daily}
+            onChange={setDaily}
+          />
+          <LimitField
+            label="Aylık kota"
+            suffix="istek/ay"
+            placeholder="30000"
+            value={monthly}
+            onChange={setMonthly}
+          />
+          <div>
+            <label className="mb-1.5 block text-[11px] uppercase tracking-wider text-muted-foreground">
+              Not (dahili)
+            </label>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="ör. Araştırmacı · Mart sonuna kadar"
+              maxLength={200}
+              rows={2}
+              className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-brand-500"
+            />
+          </div>
+        </div>
+
+        <div className="mt-6 flex items-center justify-between gap-2">
+          <Button variant="ghost" size="sm" onClick={handleReset} disabled={saving}>
+            Varsayılana dön
+          </Button>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
+              İptal
+            </Button>
+            <Button size="sm" onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Kaydet'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LimitField({
+  label,
+  suffix,
+  placeholder,
+  value,
+  onChange,
+}: {
+  label: string;
+  suffix: string;
+  placeholder: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-[11px] uppercase tracking-wider text-muted-foreground">
+        {label}
+      </label>
+      <div className="flex items-center rounded-md border border-border bg-background focus-within:border-brand-500">
+        <input
+          type="number"
+          inputMode="numeric"
+          min={0}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="flex-1 bg-transparent px-3 py-2 font-mono text-sm outline-none placeholder:text-muted-foreground/50"
+        />
+        <span className="pr-3 font-mono text-[11px] text-muted-foreground">{suffix}</span>
+      </div>
     </div>
   );
 }

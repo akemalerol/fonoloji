@@ -9,6 +9,10 @@ export interface UserRecord {
   role: string;
   email_verified_at: number | null;
   disabled_at: number | null;
+  custom_monthly_quota: number | null;
+  custom_daily_quota: number | null;
+  custom_rpm: number | null;
+  limit_note: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -65,4 +69,30 @@ export function setDisabled(db: Database, userId: number, disabled: boolean): vo
 
 export function setPlan(db: Database, userId: number, plan: string): void {
   db.prepare(`UPDATE users SET plan = ?, updated_at = ? WHERE id = ?`).run(plan, Date.now(), userId);
+}
+
+export interface CustomLimits {
+  monthlyQuota: number | null; // null → clear override, fall back to plan default
+  dailyQuota: number | null;
+  rpm: number | null;
+  note: string | null;
+}
+
+export function setCustomLimits(db: Database, userId: number, limits: CustomLimits): void {
+  db.prepare(
+    `UPDATE users SET
+       custom_monthly_quota = ?,
+       custom_daily_quota = ?,
+       custom_rpm = ?,
+       limit_note = ?,
+       updated_at = ?
+     WHERE id = ?`,
+  ).run(
+    limits.monthlyQuota,
+    limits.dailyQuota,
+    limits.rpm,
+    limits.note,
+    Date.now(),
+    userId,
+  );
 }
