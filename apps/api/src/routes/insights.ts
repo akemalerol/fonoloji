@@ -468,12 +468,26 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
              WHEN 'GOLDUSD_OZ' THEN 6
              WHEN 'SILVERTRY_GR' THEN 7
              WHEN 'SILVERUSD_OZ' THEN 8
-             WHEN 'NDX' THEN 9
-             WHEN 'SPX' THEN 10
-             WHEN 'FTSE' THEN 11
-             WHEN 'DAX' THEN 12
-             WHEN 'BTCUSD' THEN 13
-             WHEN 'ETHUSD' THEN 14
+             WHEN 'NDX' THEN 10
+             WHEN 'SPX' THEN 11
+             WHEN 'DJI' THEN 12
+             WHEN 'FTSE' THEN 13
+             WHEN 'DAX' THEN 14
+             WHEN 'CAC' THEN 15
+             WHEN 'N225' THEN 16
+             WHEN 'HSI' THEN 17
+             WHEN 'KOSPI' THEN 18
+             WHEN 'NIFTY' THEN 19
+             WHEN 'BTCUSD' THEN 30
+             WHEN 'ETHUSD' THEN 31
+             WHEN 'BNBUSD' THEN 32
+             WHEN 'SOLUSD' THEN 33
+             WHEN 'XRPUSD' THEN 34
+             WHEN 'DOGEUSD' THEN 35
+             WHEN 'ADAUSD' THEN 36
+             WHEN 'TRXUSD' THEN 37
+             WHEN 'AVAXUSD' THEN 38
+             WHEN 'LINKUSD' THEN 39
              ELSE 99
            END`,
       )

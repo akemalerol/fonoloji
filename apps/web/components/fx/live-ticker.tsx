@@ -2,6 +2,7 @@
 
 import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
 import * as React from 'react';
+import { countryFlag, MARKET_META } from '@/lib/market-meta';
 import { Marquee } from './marquee';
 
 interface Ticker {
@@ -41,11 +42,25 @@ const SHORT_NAME: Record<string, string> = {
   SILVERTRY_GR: 'Gram Gümüş',
   BTCUSD: 'Bitcoin',
   ETHUSD: 'Ethereum',
+  BNBUSD: 'BNB',
+  SOLUSD: 'Solana',
+  XRPUSD: 'XRP',
+  DOGEUSD: 'Dogecoin',
+  ADAUSD: 'Cardano',
+  TRXUSD: 'TRON',
+  AVAXUSD: 'Avalanche',
+  LINKUSD: 'Chainlink',
   BIST100: 'BIST 100',
   NDX: 'Nasdaq 100',
   SPX: 'S&P 500',
+  DJI: 'Dow Jones',
   FTSE: 'FTSE 100',
   DAX: 'DAX',
+  CAC: 'CAC 40',
+  N225: 'Nikkei',
+  HSI: 'Hang Seng',
+  KOSPI: 'KOSPI',
+  NIFTY: 'Nifty 50',
 };
 
 /**
@@ -224,10 +239,12 @@ export function LiveTicker({
   if (tickers.length === 0) return null;
 
   const renderChip = (t: Ticker) => {
-    const fmt = FORMAT[t.symbol] ?? ((v: number) => v.toFixed(2));
+    const meta = MARKET_META[t.symbol];
+    const fmt = FORMAT[t.symbol] ?? meta?.format ?? ((v: number) => v.toFixed(2));
     const up = (t.change_pct ?? 0) >= 0;
     const f = flash[t.symbol];
     const theme = THEMES[t.symbol] ?? FALLBACK_THEME;
+    const flag = countryFlag(meta?.country);
     return (
       <div
         key={t.symbol}
@@ -235,7 +252,7 @@ export function LiveTicker({
           f === 'up' ? '!bg-gain/15 !ring-gain/40' : f === 'down' ? '!bg-loss/15 !ring-loss/40' : ''
         }`}
       >
-        {theme.dot}
+        {flag ? <span className="text-sm leading-none">{flag}</span> : theme.dot}
         <span className={`text-[10.5px] uppercase tracking-wider ${theme.label}`}>
           {SHORT_NAME[t.symbol] ?? t.name}
         </span>

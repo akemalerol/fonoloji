@@ -131,32 +131,57 @@ export async function runLiveMarketIngest(): Promise<{ updated: number }> {
   // value — Yahoo free tier is delayed ~15min anyway, +20min lag captures the
   // final tick after close.
   const wantBist = isMarketOpen('Europe/Istanbul', 9, 55, 18, 10);
-  const wantNdx = isMarketOpen('America/New_York', 9, 30, 16, 0); // NASDAQ + NYSE share hours
+  const wantUs = isMarketOpen('America/New_York', 9, 30, 16, 0); // NDX + SPX + DJI
   const wantFtse = isMarketOpen('Europe/London', 8, 0, 16, 30);
   const wantDax = isMarketOpen('Europe/Berlin', 9, 0, 17, 30);
-  // FX + metals: essentially 24h Mon-Fri, skip true weekend only.
+  const wantCac = isMarketOpen('Europe/Paris', 9, 0, 17, 30);
+  const wantN225 = isMarketOpen('Asia/Tokyo', 9, 0, 15, 0);
+  const wantHsi = isMarketOpen('Asia/Hong_Kong', 9, 30, 16, 0);
+  const wantKospi = isMarketOpen('Asia/Seoul', 9, 0, 15, 30);
+  const wantNifty = isMarketOpen('Asia/Kolkata', 9, 15, 15, 30);
   const wd = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Istanbul', weekday: 'short' }).format(new Date());
   const isFxWeekend = wd === 'Sat' || wd === 'Sun';
   const wantFx = !isFxWeekend;
-  // Crypto trades 24/7 — always fetch.
-  const wantCrypto = true;
+  const wantCrypto = true; // 24/7
 
   const maybe = <T,>(cond: boolean, fn: () => Promise<T | null>): Promise<T | null> =>
     cond ? fn() : Promise.resolve(null);
 
-  const [bist, usd, eur, gbp, gold, silver, btc, eth, ndx, spx, ftse, dax] = await Promise.all([
+  const [
+    bist,
+    usd, eur, gbp,
+    gold, silver,
+    ndx, spx, dji, ftse, dax, cac, n225, hsi, kospi, nifty,
+    btc, eth, bnb, sol, xrp, doge, ada, trx, avax, link,
+  ] = await Promise.all([
     maybe(wantBist, () => fetchYahooQuote('XU100.IS')),
     maybe(wantFx, () => fetchYahooQuote('USDTRY=X')),
     maybe(wantFx, () => fetchYahooQuote('EURTRY=X')),
     maybe(wantFx, () => fetchYahooQuote('GBPTRY=X')),
     maybe(wantFx, () => fetchYahooQuote('GC=F')),
     maybe(wantFx, () => fetchYahooQuote('SI=F')),
-    maybe(wantCrypto, () => fetchYahooQuote('BTC-USD')),
-    maybe(wantCrypto, () => fetchYahooQuote('ETH-USD')),
-    maybe(wantNdx, () => fetchYahooQuote('^NDX')),
-    maybe(wantNdx, () => fetchYahooQuote('^GSPC')),
+    // Indices
+    maybe(wantUs, () => fetchYahooQuote('^NDX')),
+    maybe(wantUs, () => fetchYahooQuote('^GSPC')),
+    maybe(wantUs, () => fetchYahooQuote('^DJI')),
     maybe(wantFtse, () => fetchYahooQuote('^FTSE')),
     maybe(wantDax, () => fetchYahooQuote('^GDAXI')),
+    maybe(wantCac, () => fetchYahooQuote('^FCHI')),
+    maybe(wantN225, () => fetchYahooQuote('^N225')),
+    maybe(wantHsi, () => fetchYahooQuote('^HSI')),
+    maybe(wantKospi, () => fetchYahooQuote('^KS11')),
+    maybe(wantNifty, () => fetchYahooQuote('^NSEI')),
+    // Crypto
+    maybe(wantCrypto, () => fetchYahooQuote('BTC-USD')),
+    maybe(wantCrypto, () => fetchYahooQuote('ETH-USD')),
+    maybe(wantCrypto, () => fetchYahooQuote('BNB-USD')),
+    maybe(wantCrypto, () => fetchYahooQuote('SOL-USD')),
+    maybe(wantCrypto, () => fetchYahooQuote('XRP-USD')),
+    maybe(wantCrypto, () => fetchYahooQuote('DOGE-USD')),
+    maybe(wantCrypto, () => fetchYahooQuote('ADA-USD')),
+    maybe(wantCrypto, () => fetchYahooQuote('TRX-USD')),
+    maybe(wantCrypto, () => fetchYahooQuote('AVAX-USD')),
+    maybe(wantCrypto, () => fetchYahooQuote('LINK-USD')),
   ]);
 
   if (bist) tickers.push({ symbol: 'BIST100', name: 'BIST 100', value: bist.price, previous: bist.prevClose, source: 'yahoo' });
@@ -197,12 +222,26 @@ export async function runLiveMarketIngest(): Promise<{ updated: number }> {
   // Global stock indices
   if (ndx) tickers.push({ symbol: 'NDX', name: 'Nasdaq 100', value: ndx.price, previous: ndx.prevClose, source: 'yahoo' });
   if (spx) tickers.push({ symbol: 'SPX', name: 'S&P 500', value: spx.price, previous: spx.prevClose, source: 'yahoo' });
+  if (dji) tickers.push({ symbol: 'DJI', name: 'Dow Jones', value: dji.price, previous: dji.prevClose, source: 'yahoo' });
   if (ftse) tickers.push({ symbol: 'FTSE', name: 'FTSE 100', value: ftse.price, previous: ftse.prevClose, source: 'yahoo' });
   if (dax) tickers.push({ symbol: 'DAX', name: 'DAX', value: dax.price, previous: dax.prevClose, source: 'yahoo' });
+  if (cac) tickers.push({ symbol: 'CAC', name: 'CAC 40', value: cac.price, previous: cac.prevClose, source: 'yahoo' });
+  if (n225) tickers.push({ symbol: 'N225', name: 'Nikkei 225', value: n225.price, previous: n225.prevClose, source: 'yahoo' });
+  if (hsi) tickers.push({ symbol: 'HSI', name: 'Hang Seng', value: hsi.price, previous: hsi.prevClose, source: 'yahoo' });
+  if (kospi) tickers.push({ symbol: 'KOSPI', name: 'KOSPI', value: kospi.price, previous: kospi.prevClose, source: 'yahoo' });
+  if (nifty) tickers.push({ symbol: 'NIFTY', name: 'Nifty 50', value: nifty.price, previous: nifty.prevClose, source: 'yahoo' });
 
   // Crypto — 24/7
   if (btc) tickers.push({ symbol: 'BTCUSD', name: 'Bitcoin', value: btc.price, previous: btc.prevClose, source: 'yahoo' });
   if (eth) tickers.push({ symbol: 'ETHUSD', name: 'Ethereum', value: eth.price, previous: eth.prevClose, source: 'yahoo' });
+  if (bnb) tickers.push({ symbol: 'BNBUSD', name: 'BNB', value: bnb.price, previous: bnb.prevClose, source: 'yahoo' });
+  if (sol) tickers.push({ symbol: 'SOLUSD', name: 'Solana', value: sol.price, previous: sol.prevClose, source: 'yahoo' });
+  if (xrp) tickers.push({ symbol: 'XRPUSD', name: 'XRP', value: xrp.price, previous: xrp.prevClose, source: 'yahoo' });
+  if (doge) tickers.push({ symbol: 'DOGEUSD', name: 'Dogecoin', value: doge.price, previous: doge.prevClose, source: 'yahoo' });
+  if (ada) tickers.push({ symbol: 'ADAUSD', name: 'Cardano', value: ada.price, previous: ada.prevClose, source: 'yahoo' });
+  if (trx) tickers.push({ symbol: 'TRXUSD', name: 'TRON', value: trx.price, previous: trx.prevClose, source: 'yahoo' });
+  if (avax) tickers.push({ symbol: 'AVAXUSD', name: 'Avalanche', value: avax.price, previous: avax.prevClose, source: 'yahoo' });
+  if (link) tickers.push({ symbol: 'LINKUSD', name: 'Chainlink', value: link.price, previous: link.prevClose, source: 'yahoo' });
 
   // TCMB fallback only for FX pairs Yahoo missed (rare)
   const needsFallback = ['USDTRY', 'EURTRY', 'GBPTRY'].filter((s) => !tickers.find((t) => t.symbol === s));
