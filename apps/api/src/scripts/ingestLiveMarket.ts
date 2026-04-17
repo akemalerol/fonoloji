@@ -94,13 +94,16 @@ export async function runLiveMarketIngest(): Promise<{ updated: number }> {
   const db = getDb();
   const tickers: Ticker[] = [];
 
-  // Yahoo: FX pairs + BIST + gold futures — in parallel
-  const [bist, usd, eur, gbp, gold] = await Promise.all([
+  // Yahoo: FX, BIST, precious metals, crypto — parallel
+  const [bist, usd, eur, gbp, gold, silver, btc, eth] = await Promise.all([
     fetchYahooQuote('XU100.IS'),
     fetchYahooQuote('USDTRY=X'),
     fetchYahooQuote('EURTRY=X'),
     fetchYahooQuote('GBPTRY=X'),
     fetchYahooQuote('GC=F'),
+    fetchYahooQuote('SI=F'),
+    fetchYahooQuote('BTC-USD'),
+    fetchYahooQuote('ETH-USD'),
   ]);
 
   if (bist) tickers.push({ symbol: 'BIST100', name: 'BIST 100', value: bist.price, previous: bist.prevClose, source: 'yahoo' });
@@ -108,16 +111,11 @@ export async function runLiveMarketIngest(): Promise<{ updated: number }> {
   if (eur) tickers.push({ symbol: 'EURTRY', name: 'Euro / TL', value: eur.price, previous: eur.prevClose, source: 'yahoo' });
   if (gbp) tickers.push({ symbol: 'GBPTRY', name: 'Sterlin / TL', value: gbp.price, previous: gbp.prevClose, source: 'yahoo' });
 
-  // Gold: ons altın in USD (direct) + gram altın in TL (ons→gram conversion × USDTRY)
   const OZ_PER_GRAM = 31.1034768;
+
+  // Gold: ons ($) + gram (TL)
   if (gold) {
-    tickers.push({
-      symbol: 'GOLDUSD_OZ',
-      name: 'Ons Altın',
-      value: gold.price,
-      previous: gold.prevClose,
-      source: 'yahoo',
-    });
+    tickers.push({ symbol: 'GOLDUSD_OZ', name: 'Ons Altın', value: gold.price, previous: gold.prevClose, source: 'yahoo' });
   }
   if (gold && usd) {
     tickers.push({
@@ -128,6 +126,24 @@ export async function runLiveMarketIngest(): Promise<{ updated: number }> {
       source: 'yahoo',
     });
   }
+
+  // Silver: ons ($) + gram (TL)
+  if (silver) {
+    tickers.push({ symbol: 'SILVERUSD_OZ', name: 'Ons Gümüş', value: silver.price, previous: silver.prevClose, source: 'yahoo' });
+  }
+  if (silver && usd) {
+    tickers.push({
+      symbol: 'SILVERTRY_GR',
+      name: 'Gram Gümüş',
+      value: (silver.price / OZ_PER_GRAM) * usd.price,
+      previous: (silver.prevClose / OZ_PER_GRAM) * usd.prevClose,
+      source: 'yahoo',
+    });
+  }
+
+  // Crypto
+  if (btc) tickers.push({ symbol: 'BTCUSD', name: 'Bitcoin', value: btc.price, previous: btc.prevClose, source: 'yahoo' });
+  if (eth) tickers.push({ symbol: 'ETHUSD', name: 'Ethereum', value: eth.price, previous: eth.prevClose, source: 'yahoo' });
 
   // TCMB fallback only for FX pairs Yahoo missed (rare)
   const needsFallback = ['USDTRY', 'EURTRY', 'GBPTRY'].filter((s) => !tickers.find((t) => t.symbol === s));

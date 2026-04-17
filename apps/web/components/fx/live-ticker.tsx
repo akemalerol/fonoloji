@@ -19,6 +19,10 @@ const FORMAT: Record<string, (v: number) => string> = {
   GBPTRY: (v) => `₺${v.toFixed(2)}`,
   GOLDUSD_OZ: (v) => `$${v.toLocaleString('tr-TR', { maximumFractionDigits: 1 })}`,
   GOLDTRY_GR: (v) => `₺${v.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}`,
+  SILVERUSD_OZ: (v) => `$${v.toFixed(2)}`,
+  SILVERTRY_GR: (v) => `₺${v.toLocaleString('tr-TR', { maximumFractionDigits: 1 })}`,
+  BTCUSD: (v) => `$${v.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}`,
+  ETHUSD: (v) => `$${v.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}`,
   BIST100: (v) => v.toLocaleString('tr-TR', { maximumFractionDigits: 0 }),
 };
 
@@ -28,6 +32,10 @@ const SHORT_NAME: Record<string, string> = {
   GBPTRY: 'GBP/TL',
   GOLDUSD_OZ: 'Ons Altın',
   GOLDTRY_GR: 'Gram Altın',
+  SILVERUSD_OZ: 'Ons Gümüş',
+  SILVERTRY_GR: 'Gram Gümüş',
+  BTCUSD: 'Bitcoin',
+  ETHUSD: 'Ethereum',
   BIST100: 'BIST 100',
 };
 
@@ -48,6 +56,15 @@ const GOLD_DOT = (
     className="relative inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[radial-gradient(circle_at_30%_30%,#FDE68A_0%,#F59E0B_55%,#B45309_100%)] shadow-[0_0_8px_rgba(245,158,11,0.45)] ring-1 ring-amber-300/40"
   >
     <span className="absolute inset-[2px] rounded-full bg-[radial-gradient(circle_at_40%_35%,rgba(255,255,255,0.35)_0%,transparent_55%)]" />
+  </span>
+);
+
+const SILVER_DOT = (
+  <span
+    aria-hidden
+    className="relative inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[radial-gradient(circle_at_30%_30%,#F8FAFC_0%,#CBD5E1_55%,#64748B_100%)] shadow-[0_0_8px_rgba(203,213,225,0.35)] ring-1 ring-slate-300/40"
+  >
+    <span className="absolute inset-[2px] rounded-full bg-[radial-gradient(circle_at_40%_35%,rgba(255,255,255,0.45)_0%,transparent_55%)]" />
   </span>
 );
 
@@ -98,6 +115,30 @@ const THEMES: Record<string, Theme> = {
     label: 'font-semibold text-amber-200/90',
     value: 'bg-gradient-to-b from-amber-200 to-amber-400 bg-clip-text text-transparent',
     dot: GOLD_DOT,
+  },
+  SILVERUSD_OZ: {
+    chip: 'bg-gradient-to-r from-slate-400/[0.08] to-transparent ring-1 ring-slate-300/20',
+    label: 'font-semibold text-slate-200/90',
+    value: 'bg-gradient-to-b from-slate-100 to-slate-300 bg-clip-text text-transparent',
+    dot: SILVER_DOT,
+  },
+  SILVERTRY_GR: {
+    chip: 'bg-gradient-to-r from-slate-400/[0.08] to-transparent ring-1 ring-slate-300/20',
+    label: 'font-semibold text-slate-200/90',
+    value: 'bg-gradient-to-b from-slate-100 to-slate-300 bg-clip-text text-transparent',
+    dot: SILVER_DOT,
+  },
+  BTCUSD: {
+    chip: 'bg-gradient-to-r from-orange-500/[0.1] to-transparent ring-1 ring-orange-400/25',
+    label: 'font-semibold text-orange-200/95',
+    value: 'bg-gradient-to-b from-orange-100 to-orange-300 bg-clip-text text-transparent',
+    dot: <Glyph letter="₿" gradient="bg-gradient-to-br from-orange-300 to-orange-600" />,
+  },
+  ETHUSD: {
+    chip: 'bg-gradient-to-r from-indigo-400/[0.1] to-transparent ring-1 ring-indigo-400/25',
+    label: 'font-semibold text-indigo-200/95',
+    value: 'bg-gradient-to-b from-indigo-100 to-indigo-300 bg-clip-text text-transparent',
+    dot: <Glyph letter="Ξ" gradient="bg-gradient-to-br from-indigo-300 to-indigo-600" />,
   },
 };
 

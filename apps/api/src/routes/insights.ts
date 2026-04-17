@@ -466,7 +466,11 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
              WHEN 'GBPTRY' THEN 4
              WHEN 'GOLDTRY_GR' THEN 5
              WHEN 'GOLDUSD_OZ' THEN 6
-             ELSE 9
+             WHEN 'SILVERTRY_GR' THEN 7
+             WHEN 'SILVERUSD_OZ' THEN 8
+             WHEN 'BTCUSD' THEN 9
+             WHEN 'ETHUSD' THEN 10
+             ELSE 99
            END`,
       )
       .all();
