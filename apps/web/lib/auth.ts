@@ -1,8 +1,9 @@
 export interface Plan {
-  id: 'free' | 'hobi' | 'pro' | 'kurumsal';
+  id: 'free';
   name: string;
   priceTRY: number;
   monthlyQuota: number;
+  dailyQuota: number;
   rateLimitPerMinute: number;
   features: string[];
   highlight?: boolean;

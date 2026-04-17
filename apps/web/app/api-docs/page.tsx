@@ -58,7 +58,7 @@ export default function ApiDocsPage() {
                 href="/iletisim"
                 className="inline-flex items-center gap-2 rounded-full border border-border bg-card/40 px-5 py-2.5 text-sm hover:bg-card/80"
               >
-                Kurumsal plan için iletişim
+                Özel kullanım için iletişim
               </Link>
             </div>
           </div>

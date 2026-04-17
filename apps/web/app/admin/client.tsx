@@ -52,7 +52,7 @@ interface Message {
   created_at: number;
 }
 
-const PLANS = ['free', 'hobi', 'pro', 'kurumsal'] as const;
+const PLANS = ['free'] as const;
 
 export function AdminClient({
   stats: initialStats,

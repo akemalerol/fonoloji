@@ -31,7 +31,7 @@ async function requireAdmin(req: FastifyRequest, reply: FastifyReply): Promise<v
 }
 
 const planSchema = z.object({
-  plan: z.enum(['free', 'hobi', 'pro', 'kurumsal']),
+  plan: z.enum(['free']),
 });
 
 export const adminRoute: FastifyPluginAsync = async (app) => {

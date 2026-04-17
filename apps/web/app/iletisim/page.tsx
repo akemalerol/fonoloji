@@ -15,7 +15,7 @@ export default function ContactPage() {
             <span className="display-italic gradient-text">Merhaba</span> deme zamanı
           </h1>
           <p className="mx-auto mt-5 max-w-xl text-sm text-muted-foreground md:text-base">
-            Kurumsal plan, özel entegrasyon, teknik destek, geri bildirim — ne olursa. Genelde 24 saat içinde dönüyoruz.
+            Özel entegrasyon, yüksek-hacim kullanım, teknik destek, geri bildirim — ne olursa. Genelde 24 saat içinde dönüyoruz.
           </p>
         </div>
 
@@ -29,8 +29,8 @@ export default function ContactPage() {
           />
           <InfoCard
             icon={Building2}
-            title="Kurumsal"
-            desc="Özel fiyatlandırma, SLA, white-label"
+            title="Özel kullanım"
+            desc="Yüksek hacim, özel entegrasyon"
             from="from-amber-500/15"
             to="to-rose-500/10"
           />

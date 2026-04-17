@@ -135,14 +135,13 @@ tests/                    Vitest
 curl -H "X-API-Key: $KEY" https://fonoloji.com/v1/funds?limit=10
 ```
 
-**Planlar:**
+**Limit:** Tek tier, tamamen **ücretsiz**.
 
-| Plan | Aylık | Günlük | Dakikada | Fiyat |
+| | Aylık kota | Günlük kap | Dakikada | Fiyat |
 |---|---|---|---|---|
-| Free | 3.000 | 100 | 10 | 0 ₺ |
-| Hobi | 30.000 | 1.500 | 60 | 99 ₺ |
-| Pro | 300.000 | 15.000 | 180 | 349 ₺ |
-| Kurumsal | Özel | Özel | 600+ | Sözleşme |
+| Kayıtlı kullanıcı | 30.000 | 3.000 | 60 | **0 ₺** — ömür boyu |
+
+Yüksek hacim (ör. backfill, akademik araştırma, kurumsal entegrasyon) için [iletişim](https://fonoloji.com/iletisim) — özel limit açıyoruz.
 
 **Öne çıkan endpoint'ler:**
 

@@ -115,12 +115,12 @@ export function PanelClient({ initial }: { initial: Me }) {
           <p className="mt-3 text-xs text-muted-foreground">
             %{pct} kullanıldı · dönem {usage.period} · sıfırlama ayın 1'i
           </p>
-          {pct > 60 && (
+          {pct > 85 && (
             <Link
               href="/iletisim"
               className="mt-4 inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-4 py-2 text-xs hover:bg-card"
             >
-              Kurumsal plan için iletişim →
+              Daha yüksek limit için iletişim →
             </Link>
           )}
         </div>
@@ -129,9 +129,7 @@ export function PanelClient({ initial }: { initial: Me }) {
         <div className="panel p-6">
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Mevcut plan</div>
           <div className="mt-1 serif text-3xl">{plan.name}</div>
-          <div className="mt-1 font-mono text-sm text-muted-foreground">
-            {plan.priceTRY === 0 ? 'Ücretsiz' : `₺${plan.priceTRY}/ay`}
-          </div>
+          <div className="mt-1 font-mono text-sm text-muted-foreground">Ücretsiz · ömür boyu</div>
           <ul className="mt-4 space-y-1 text-xs text-muted-foreground">
             {plan.features.map((f) => (
               <li key={f}>· {f}</li>
@@ -141,7 +139,7 @@ export function PanelClient({ initial }: { initial: Me }) {
             href="/iletisim"
             className="mt-4 inline-flex items-center gap-1 text-xs text-brand-400 hover:text-brand-300"
           >
-            Özel plan için iletişim →
+            Özel kullanım için iletişim →
           </Link>
         </div>
 
