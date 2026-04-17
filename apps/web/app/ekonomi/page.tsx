@@ -1,4 +1,5 @@
-import { Calendar, Percent, TrendingDown, TrendingUp } from 'lucide-react';
+import { ArrowUpRight, Calendar, Percent, TrendingDown, TrendingUp } from 'lucide-react';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { CpiCharts } from './charts';
 
@@ -62,6 +63,19 @@ export default async function EconomyPage() {
             data.tuik.gov.tr
           </a>
         </p>
+        <div className="mt-5">
+          <Link
+            href="/ekonomi/piyasalar"
+            className="group inline-flex items-center gap-2 rounded-full border border-border bg-card/50 px-4 py-2 text-xs backdrop-blur transition-colors hover:border-brand-500/50 hover:bg-card"
+          >
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            </span>
+            Canlı piyasalar dashboard'u
+            <ArrowUpRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">

@@ -16,6 +16,7 @@ const STATIC_PAGES = [
   '/kesifler/risk-skoru',
   '/karsilastir',
   '/ekonomi',
+  '/ekonomi/piyasalar',
   '/hesapla',
   '/yonetici',
   '/api-docs',

@@ -54,7 +54,7 @@ export default async function HomePage() {
     <>
       {/* GLOBAL LIVE MARKET STRIP — right under the header */}
       {liveMarket.items.length > 0 && (
-        <LiveTicker tickers={liveMarket.items} updatedAt={liveMarket.updated_at} />
+        <LiveTicker tickers={liveMarket.items} />
       )}
 
       {/* HERO */}

@@ -184,15 +184,11 @@ const FALLBACK_THEME: Theme = {
 
 export function LiveTicker({
   tickers: initialTickers,
-  updatedAt: initialUpdatedAt,
 }: {
   tickers: Ticker[];
-  updatedAt: number | null;
 }) {
   const [tickers, setTickers] = React.useState(initialTickers);
-  const [updatedAt, setUpdatedAt] = React.useState(initialUpdatedAt);
   const [flash, setFlash] = React.useState<Record<string, 'up' | 'down' | null>>({});
-  const [now, setNow] = React.useState(Date.now());
 
   React.useEffect(() => {
     let cancelled = false;
@@ -216,29 +212,16 @@ export function LiveTicker({
         }
 
         setTickers(data.items);
-        setUpdatedAt(data.updated_at);
       } catch {}
     }
     const interval = setInterval(load, 5_000);
-    const clock = setInterval(() => setNow(Date.now()), 5_000);
     return () => {
       cancelled = true;
       clearInterval(interval);
-      clearInterval(clock);
     };
   }, [tickers]);
 
   if (tickers.length === 0) return null;
-
-  const agoSec = updatedAt ? Math.round((now - updatedAt) / 1000) : null;
-  const agoText =
-    agoSec === null
-      ? ''
-      : agoSec < 60
-        ? 'az önce'
-        : agoSec < 3600
-          ? `${Math.round(agoSec / 60)}dk önce`
-          : `${Math.round(agoSec / 3600)}sa önce`;
 
   const renderChip = (t: Ticker) => {
     const fmt = FORMAT[t.symbol] ?? ((v: number) => v.toFixed(2));
@@ -279,7 +262,7 @@ export function LiveTicker({
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
             <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
           </span>
-          {agoSec !== null ? agoText : 'canlı'}
+          canlı
         </div>
         <Marquee pauseOnHover className="flex-1">
           {tickers.map(renderChip)}
