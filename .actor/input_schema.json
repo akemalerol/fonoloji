@@ -1,0 +1,85 @@
+{
+  "title": "TEFAS Fund Scraper",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "mode": {
+      "title": "Scraping Mode",
+      "type": "string",
+      "description": "Veri çekme modu. Faz 1 MVP'de yalnızca 'daily' ve 'historical' aktiftir.",
+      "enum": ["daily", "historical", "fund_list", "fund_detail", "comparison"],
+      "enumTitles": ["Daily (today)", "Historical (date range)", "Fund List (Phase 2)", "Fund Detail (Phase 2)", "Comparison (Phase 2)"],
+      "default": "daily"
+    },
+    "fundCodes": {
+      "title": "Fund Codes",
+      "type": "array",
+      "description": "Çekilecek fon kodları listesi. Boş bırakılırsa tüm fonlar çekilir.",
+      "items": { "type": "string" },
+      "default": [],
+      "editor": "stringList",
+      "example": ["TTE", "AFT", "YAC", "IPB"]
+    },
+    "fundType": {
+      "title": "Fund Type",
+      "type": "string",
+      "description": "Fon tipi filtresi",
+      "enum": ["YAT", "EMK", "BYF", "ALL"],
+      "enumTitles": ["Yatırım Fonu", "Emeklilik Fonu", "Borsa Yatırım Fonu", "Tümü"],
+      "default": "ALL"
+    },
+    "startDate": {
+      "title": "Start Date",
+      "type": "string",
+      "description": "Başlangıç tarihi (YYYY-MM-DD). Historical mode için zorunlu.",
+      "editor": "datepicker",
+      "example": "2024-01-01"
+    },
+    "endDate": {
+      "title": "End Date",
+      "type": "string",
+      "description": "Bitiş tarihi (YYYY-MM-DD). Boş bırakılırsa bugünün tarihi kullanılır.",
+      "editor": "datepicker",
+      "example": "2024-12-31"
+    },
+    "includePortfolio": {
+      "title": "Include Portfolio Allocation",
+      "type": "boolean",
+      "description": "Portföy dağılımı verilerini de çek (Faz 2'de aktif olacak).",
+      "default": false
+    },
+    "includeComparison": {
+      "title": "Include Fund Category",
+      "type": "boolean",
+      "description": "Fon kategorisi bilgisini ekle (Faz 2'de aktif olacak).",
+      "default": true
+    },
+    "outputCurrency": {
+      "title": "Output Currency",
+      "type": "string",
+      "description": "Fiyat çıktı para birimi (Faz 2'de aktif olacak; şimdilik TRY döner).",
+      "enum": ["TRY", "USD", "EUR"],
+      "default": "TRY"
+    },
+    "maxRequestsPerMinute": {
+      "title": "Max Requests Per Minute",
+      "type": "integer",
+      "description": "Dakikadaki maksimum istek sayısı (rate limiting).",
+      "default": 30,
+      "minimum": 5,
+      "maximum": 60
+    },
+    "proxy": {
+      "title": "Proxy Configuration",
+      "type": "object",
+      "description": "Apify proxy ayarları. TEFAS datacenter IP'lerini F5 WAF ile blokluyor — RESIDENTIAL grup + TR country önerilir.",
+      "editor": "proxy",
+      "default": {
+        "useApifyProxy": true,
+        "apifyProxyGroups": ["RESIDENTIAL"],
+        "apifyProxyCountry": "TR"
+      }
+    }
+  },
+  "required": ["mode"]
+}

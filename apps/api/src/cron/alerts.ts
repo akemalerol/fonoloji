@@ -1,0 +1,323 @@
+import type { Database } from 'better-sqlite3';
+import { Resend } from 'resend';
+import { getDb } from '../db/index.js';
+
+const FROM = process.env.FONOLOJI_MAIL_FROM ?? 'Fonoloji <no-reply@fonoloji.com>';
+const SITE = process.env.FONOLOJI_SITE_URL ?? 'https://fonoloji.com';
+
+let _resend: Resend | null = null;
+function getResend(): Resend | null {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) return null;
+  if (!_resend) _resend = new Resend(key);
+  return _resend;
+}
+
+interface AlertRow {
+  id: number;
+  user_id: number;
+  code: string;
+  kind: 'price_above' | 'price_below' | 'return_above' | 'return_below';
+  threshold: number;
+  triggered_at: number | null;
+  user_email: string;
+  user_name: string | null;
+}
+
+function shouldFire(
+  kind: AlertRow['kind'],
+  threshold: number,
+  price: number | null,
+  return_1m: number | null,
+): boolean {
+  if (kind === 'price_above' && price !== null) return price >= threshold;
+  if (kind === 'price_below' && price !== null) return price <= threshold;
+  if (kind === 'return_above' && return_1m !== null) return return_1m * 100 >= threshold;
+  if (kind === 'return_below' && return_1m !== null) return return_1m * 100 <= threshold;
+  return false;
+}
+
+function alertSubject(a: AlertRow, price: number | null): string {
+  const formatted = price ? price.toFixed(4) : '—';
+  switch (a.kind) {
+    case 'price_above':
+      return `🚨 ${a.code} ${a.threshold} üstüne çıktı (${formatted})`;
+    case 'price_below':
+      return `🚨 ${a.code} ${a.threshold} altına düştü (${formatted})`;
+    case 'return_above':
+      return `📈 ${a.code} 1A getirisi %${a.threshold} üstüne çıktı`;
+    case 'return_below':
+      return `📉 ${a.code} 1A getirisi %${a.threshold} altına düştü`;
+  }
+}
+
+function alertHtml(a: AlertRow, fundName: string, price: number | null, return_1m: number | null): string {
+  const kindLabel =
+    a.kind === 'price_above' ? 'Fiyat yukarı eşiği' :
+    a.kind === 'price_below' ? 'Fiyat aşağı eşiği' :
+    a.kind === 'return_above' ? '1A getiri yukarı eşiği' : '1A getiri aşağı eşiği';
+
+  return `<!DOCTYPE html>
+<html lang="tr"><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#0b0b10;font-family:-apple-system,sans-serif;color:#e8e8ec;">
+<table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;"><tr><td align="center">
+<table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#15151b;border:1px solid #24242b;border-radius:20px;overflow:hidden;">
+  <tr><td style="background:linear-gradient(135deg,#8B5CF6 0%,#06B6D4 100%);height:4px;"></td></tr>
+  <tr><td style="padding:28px 32px;">
+    <div style="font-size:10px;font-weight:700;color:#8B5CF6;text-transform:uppercase;letter-spacing:3px;margin-bottom:8px;">ALARM TETİKLENDİ</div>
+    <h2 style="margin:0 0 4px;font-size:20px;color:#f5f5f7;font-family:Georgia,serif;font-weight:400;">${a.code} · ${fundName}</h2>
+    <p style="margin:8px 0 16px;font-size:13px;color:#a8a8b3;">Kurduğun <strong style="color:#f5f5f7;">${kindLabel}</strong> şartı gerçekleşti.</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0f16;border-radius:12px;margin-top:8px;">
+      <tr><td style="padding:14px 18px;">
+        <div style="font-size:11px;color:#7a7a85;margin-bottom:2px;">GÜNCEL FİYAT</div>
+        <div style="font-size:22px;font-family:monospace;color:#f5f5f7;">${price?.toFixed(4) ?? '—'}</div>
+        ${return_1m !== null ? `<div style="font-size:11px;color:#7a7a85;margin-top:10px;">1 AY GETİRİ</div><div style="font-size:16px;font-family:monospace;color:${return_1m >= 0 ? '#10B981' : '#F43F5E'};">%${(return_1m * 100).toFixed(2)}</div>` : ''}
+      </td></tr>
+    </table>
+    <p style="margin:22px 0 0;font-size:12px;color:#61616c;">Alarmını yönetmek için <a href="${SITE}/alarmlarim" style="color:#a8a8b3;">alarmlarım</a> sayfasını aç.</p>
+  </td></tr>
+</table>
+</td></tr></table>
+</body></html>`;
+}
+
+export async function runAlertChecker(): Promise<{ fired: number; checked: number }> {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `SELECT a.id, a.user_id, a.code, a.kind, a.threshold, a.triggered_at,
+              u.email as user_email, u.name as user_name
+       FROM price_alerts a JOIN users u ON u.id = a.user_id
+       WHERE a.enabled = 1 AND u.disabled_at IS NULL`,
+    )
+    .all() as AlertRow[];
+
+  if (rows.length === 0) return { fired: 0, checked: 0 };
+
+  const resend = getResend();
+  let fired = 0;
+
+  for (const a of rows) {
+    const m = db
+      .prepare(
+        `SELECT m.current_price, m.return_1m, f.name FROM metrics m JOIN funds f ON f.code = m.code WHERE m.code = ?`,
+      )
+      .get(a.code) as { current_price: number | null; return_1m: number | null; name: string } | undefined;
+    if (!m) continue;
+
+    if (!shouldFire(a.kind, a.threshold, m.current_price, m.return_1m)) continue;
+
+    // Skip if fired in last 24h
+    if (a.triggered_at && Date.now() - a.triggered_at < 24 * 3_600_000) continue;
+
+    const now = Date.now();
+    db.prepare(`UPDATE price_alerts SET triggered_at = ? WHERE id = ?`).run(now, a.id);
+
+    if (resend) {
+      try {
+        await resend.emails.send({
+          from: FROM,
+          to: a.user_email,
+          subject: alertSubject(a, m.current_price),
+          html: alertHtml(a, m.name, m.current_price, m.return_1m),
+        });
+        fired++;
+      } catch (err) {
+        console.warn(`[alerts] mail failed: ${(err as Error).message}`);
+      }
+    } else {
+      console.log(`[alerts] ${a.code} ${a.kind} tetiklendi, mail servisi yapılandırılmamış`);
+    }
+  }
+
+  return { fired, checked: rows.length };
+}
+
+export async function runFundChangeDetector(): Promise<{ changed: number }> {
+  const db = getDb();
+
+  // Compare current funds snapshot to historical. Track: name, category, risk_score, management_company, trading_status
+  const current = db
+    .prepare(
+      `SELECT code, name, category, risk_score, management_company, trading_status FROM funds`,
+    )
+    .all() as Array<{
+    code: string;
+    name: string;
+    category: string | null;
+    risk_score: number | null;
+    management_company: string | null;
+    trading_status: string | null;
+  }>;
+
+  let changed = 0;
+  const now = Date.now();
+  const insertStmt = db.prepare(
+    `INSERT INTO fund_changes (code, field, old_value, new_value, detected_at) VALUES (?, ?, ?, ?, ?)`,
+  );
+
+  for (const row of current) {
+    const lastChanges = db
+      .prepare(
+        `SELECT field, new_value FROM fund_changes WHERE code = ? ORDER BY detected_at DESC`,
+      )
+      .all(row.code) as Array<{ field: string; new_value: string | null }>;
+
+    // Build map of latest known value per field
+    const latest = new Map<string, string | null>();
+    for (const c of lastChanges) {
+      if (!latest.has(c.field)) latest.set(c.field, c.new_value);
+    }
+
+    const fields: Array<[string, string | null]> = [
+      ['name', row.name],
+      ['category', row.category],
+      ['risk_score', row.risk_score !== null ? String(row.risk_score) : null],
+      ['management_company', row.management_company],
+      ['trading_status', row.trading_status],
+    ];
+
+    for (const [field, value] of fields) {
+      const last = latest.get(field);
+      if (last === undefined) {
+        // First seen — no change, but seed
+        insertStmt.run(row.code, field, null, value, now);
+        continue;
+      }
+      if (last !== value) {
+        insertStmt.run(row.code, field, last, value, now);
+        changed++;
+      }
+    }
+  }
+
+  return { changed };
+}
+
+async function sendWeeklyDigestFor(user: { id: number; email: string; name: string | null }): Promise<boolean> {
+  const resend = getResend();
+  if (!resend) return false;
+
+  const db = getDb();
+  const pf = db
+    .prepare(`SELECT id FROM virtual_portfolios WHERE user_id = ?`)
+    .get(user.id) as { id: number } | undefined;
+
+  if (!pf) return false;
+
+  const holdings = db
+    .prepare(
+      `SELECT h.code, h.units, h.cost_basis_try, f.name, m.current_price, m.return_1m, m.return_1y
+       FROM portfolio_holdings h
+       LEFT JOIN funds f ON f.code = h.code
+       LEFT JOIN metrics m ON m.code = h.code
+       WHERE h.portfolio_id = ?`,
+    )
+    .all(pf.id) as Array<{
+    code: string;
+    units: number;
+    cost_basis_try: number;
+    name: string | null;
+    current_price: number | null;
+    return_1m: number | null;
+    return_1y: number | null;
+  }>;
+
+  if (holdings.length === 0) return false;
+
+  const totalCost = holdings.reduce((a, h) => a + h.cost_basis_try, 0);
+  const totalValue = holdings.reduce((a, h) => a + (h.current_price ? h.units * h.current_price : 0), 0);
+  const totalPnl = totalValue - totalCost;
+  const totalPnlPct = totalCost > 0 ? totalPnl / totalCost : 0;
+
+  const rows = holdings
+    .map((h) => {
+      const val = h.current_price ? h.units * h.current_price : 0;
+      const pnlPct = h.cost_basis_try > 0 ? (val - h.cost_basis_try) / h.cost_basis_try : 0;
+      return `<tr><td style="padding:10px 12px;border-bottom:1px solid #24242b;"><strong style="color:#f5f5f7;font-family:monospace;">${h.code}</strong><div style="font-size:11px;color:#7a7a85;">${(h.name ?? '').slice(0, 35)}</div></td><td style="padding:10px 12px;text-align:right;border-bottom:1px solid #24242b;color:#a8a8b3;font-family:monospace;">₺${val.toFixed(0)}</td><td style="padding:10px 12px;text-align:right;border-bottom:1px solid #24242b;color:${pnlPct >= 0 ? '#10B981' : '#F43F5E'};font-family:monospace;">${pnlPct >= 0 ? '+' : ''}%${(pnlPct * 100).toFixed(1)}</td></tr>`;
+    })
+    .join('');
+
+  const firstName = (user.name ?? user.email.split('@')[0] ?? '').split(' ')[0];
+
+  const html = `<!DOCTYPE html>
+<html lang="tr"><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#0b0b10;font-family:-apple-system,sans-serif;color:#e8e8ec;">
+<table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;"><tr><td align="center">
+<table width="620" cellpadding="0" cellspacing="0" style="max-width:620px;background:#15151b;border:1px solid #24242b;border-radius:20px;overflow:hidden;">
+<tr><td style="background:linear-gradient(135deg,#8B5CF6 0%,#06B6D4 100%);height:4px;"></td></tr>
+<tr><td style="padding:28px 32px;">
+  <div style="font-size:10px;font-weight:700;color:#8B5CF6;text-transform:uppercase;letter-spacing:3px;margin-bottom:8px;">HAFTALIK RAPORUNUZ</div>
+  <h2 style="margin:0 0 14px;font-size:22px;color:#f5f5f7;font-family:Georgia,serif;font-weight:400;">Merhaba ${firstName},</h2>
+  <p style="margin:0 0 20px;font-size:14px;color:#a8a8b3;line-height:1.6;">Sanal portföyünün bu haftaki durumu aşağıda.</p>
+
+  <table width="100%" style="background:#0f0f16;border-radius:14px;margin-bottom:24px;">
+    <tr>
+      <td style="padding:16px 20px;">
+        <div style="font-size:10px;color:#7a7a85;text-transform:uppercase;letter-spacing:2px;">TOPLAM DEĞER</div>
+        <div style="font-size:28px;font-family:monospace;color:#f5f5f7;margin-top:4px;">₺${totalValue.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}</div>
+        <div style="font-size:13px;color:${totalPnl >= 0 ? '#10B981' : '#F43F5E'};margin-top:6px;">
+          ${totalPnl >= 0 ? '+' : ''}₺${totalPnl.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}
+          (${totalPnlPct >= 0 ? '+' : ''}%${(totalPnlPct * 100).toFixed(2)} kar/zarar)
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div style="font-size:10px;color:#7a7a85;text-transform:uppercase;letter-spacing:2px;margin-bottom:10px;">FONLARIM</div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+    <thead><tr style="font-size:10px;color:#7a7a85;text-transform:uppercase;letter-spacing:2px;">
+      <th style="text-align:left;padding:6px 12px;border-bottom:1px solid #24242b;">Fon</th>
+      <th style="text-align:right;padding:6px 12px;border-bottom:1px solid #24242b;">Değer</th>
+      <th style="text-align:right;padding:6px 12px;border-bottom:1px solid #24242b;">K/Z</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+
+  <p style="margin:24px 0 0;font-size:12px;color:#61616c;">
+    <a href="${SITE}/portfoyum" style="color:#a8a8b3;text-decoration:underline;">Portföyümü aç</a> · <a href="${SITE}/panel" style="color:#a8a8b3;">Aboneliği yönet</a>
+  </p>
+</td></tr>
+</table>
+</td></tr></table>
+</body></html>`;
+
+  try {
+    await resend.emails.send({
+      from: FROM,
+      to: user.email,
+      subject: `Fonoloji haftalık rapor · ${totalPnlPct >= 0 ? '+' : ''}%${(totalPnlPct * 100).toFixed(1)}`,
+      html,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function runWeeklyDigest(): Promise<{ sent: number; skipped: number }> {
+  const db = getDb();
+  const subs = db
+    .prepare(
+      `SELECT u.id, u.email, u.name FROM weekly_subs s
+       JOIN users u ON u.id = s.user_id
+       WHERE s.enabled = 1 AND u.disabled_at IS NULL AND u.email_verified_at IS NOT NULL`,
+    )
+    .all() as Array<{ id: number; email: string; name: string | null }>;
+
+  let sent = 0;
+  let skipped = 0;
+
+  for (const u of subs) {
+    const ok = await sendWeeklyDigestFor(u);
+    if (ok) {
+      db.prepare(`UPDATE weekly_subs SET last_sent_at = ? WHERE user_id = ?`).run(Date.now(), u.id);
+      sent++;
+    } else {
+      skipped++;
+    }
+    await new Promise((r) => setTimeout(r, 600)); // throttle
+  }
+
+  return { sent, skipped };
+}

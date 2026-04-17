@@ -1,0 +1,11 @@
+{
+  "actorSpecification": 1,
+  "name": "tefas-fund-scraper",
+  "title": "TEFAS Turkish Fund Data Scraper",
+  "description": "Scrape investment fund data from Turkey's Electronic Fund Trading Platform (TEFAS). Daily prices and historical data for 836+ Turkish mutual funds, pension funds, and ETFs.",
+  "version": "1.3",
+  "buildTag": "latest",
+  "environmentVariables": {},
+  "dockerfile": "../Dockerfile",
+  "input": "./input_schema.json"
+}

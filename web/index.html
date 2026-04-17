@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TEFAS Fund Scraper — Playground</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #171a21;
+      --panel-2: #1f232c;
+      --border: #2a2f3a;
+      --text: #e8ebf0;
+      --muted: #8b93a1;
+      --accent: #5eead4;
+      --accent-2: #22d3ee;
+      --danger: #f87171;
+      --warn: #fbbf24;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif; }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 32px 20px 80px; }
+    header h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.02em; }
+    header p { color: var(--muted); margin: 0 0 24px; font-size: 13px; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+      padding: 20px; margin-bottom: 16px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+    .row.triple { grid-template-columns: 1fr 1fr 1fr; }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px;
+      text-transform: uppercase; letter-spacing: 0.04em; }
+    input, select, textarea {
+      width: 100%; background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); padding: 10px 12px; font-size: 14px;
+      font-family: inherit; outline: none;
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent-2); }
+    textarea { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; min-height: 100px; }
+    button {
+      background: var(--accent); color: #062420; border: 0; border-radius: 8px;
+      padding: 12px 20px; font-size: 14px; font-weight: 600; cursor: pointer;
+      letter-spacing: 0.01em; transition: transform .05s;
+    }
+    button:hover { filter: brightness(1.05); }
+    button:active { transform: translateY(1px); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+    .actions { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
+    .help { font-size: 12px; color: var(--muted); }
+    .help a { color: var(--accent-2); }
+    .status { font-size: 13px; padding: 10px 14px; border-radius: 8px; margin: 12px 0 0;
+      display: none; }
+    .status.show { display: block; }
+    .status.running { background: rgba(34,211,238,0.1); color: var(--accent-2); border: 1px solid rgba(34,211,238,0.3); }
+    .status.success { background: rgba(94,234,212,0.1); color: var(--accent); border: 1px solid rgba(94,234,212,0.3); }
+    .status.error { background: rgba(248,113,113,0.1); color: var(--danger); border: 1px solid rgba(248,113,113,0.3); }
+    .spinner { display: inline-block; width: 12px; height: 12px; margin-right: 6px;
+      border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
+      animation: spin 0.7s linear infinite; vertical-align: -2px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .results { display: none; }
+    .results.show { display: block; }
+    .tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+    .tab { padding: 8px 14px; background: transparent; border: 0; color: var(--muted);
+      border-radius: 6px 6px 0 0; cursor: pointer; font-size: 13px; }
+    .tab.active { color: var(--text); border-bottom: 2px solid var(--accent); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+    th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.04em; }
+    pre { background: var(--panel-2); padding: 14px; border-radius: 8px; overflow: auto;
+      font-size: 12px; color: var(--text); max-height: 520px; margin: 0; }
+    .meta { color: var(--muted); font-size: 12px; margin-top: 8px; }
+    .token-hint { font-size: 11px; color: var(--warn); margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>TEFAS Fund Scraper — Playground</h1>
+      <p>Apify actor'ü tarayıcıdan test etmek için küçük bir arayüz. Sunucu yok, token senin cihazında kalır.</p>
+    </header>
+
+    <section class="panel">
+      <label for="token">Apify API Token</label>
+      <input id="token" type="password" placeholder="apify_api_xxxxxxxxxxxxxxxxxx" autocomplete="off" />
+      <div class="token-hint">
+        Token tarayıcında <code>localStorage</code>'a kaydedilir, dışarı gitmez. Apify console → Settings → Integrations → Personal API tokens.
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="row">
+        <div>
+          <label for="actorId">Actor ID (veya kullanıcı/slug)</label>
+          <input id="actorId" value="alikemal~tefas-fund-scraper" />
+        </div>
+        <div>
+          <label for="mode">Mode</label>
+          <select id="mode">
+            <option value="daily">daily</option>
+            <option value="historical" selected>historical</option>
+            <option value="fund_list">fund_list</option>
+            <option value="fund_detail">fund_detail</option>
+            <option value="comparison">comparison</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row triple">
+        <div>
+          <label for="fundCodes">Fund Codes (virgülle)</label>
+          <input id="fundCodes" value="TTE" placeholder="TTE, AFT, YAC" />
+        </div>
+        <div>
+          <label for="fundType">Fund Type</label>
+          <select id="fundType">
+            <option>ALL</option>
+            <option selected>YAT</option>
+            <option>EMK</option>
+            <option>BYF</option>
+          </select>
+        </div>
+        <div>
+          <label for="rpm">Max RPM</label>
+          <input id="rpm" type="number" value="20" min="5" max="60" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="startDate">Start Date</label>
+          <input id="startDate" type="date" value="2024-06-14" />
+        </div>
+        <div>
+          <label for="endDate">End Date</label>
+          <input id="endDate" type="date" value="2024-06-14" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="proxyGroup">Proxy Group</label>
+          <select id="proxyGroup">
+            <option value="RESIDENTIAL" selected>RESIDENTIAL (önerilir)</option>
+            <option value="DATACENTER">DATACENTER</option>
+            <option value="">(none)</option>
+          </select>
+        </div>
+        <div>
+          <label for="proxyCountry">Proxy Country</label>
+          <input id="proxyCountry" value="TR" />
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="run">Run Actor</button>
+        <button id="copyInput" class="secondary">Copy Input JSON</button>
+        <span id="status" class="status"></span>
+      </div>
+      <div class="help" style="margin-top:10px">
+        Aktör sync modda çalışır (timeout ~120 sn). Sonuç doğrudan dataset olarak döner.
+      </div>
+    </section>
+
+    <section id="results" class="results panel">
+      <div class="tabs">
+        <button class="tab active" data-view="table">Table</button>
+        <button class="tab" data-view="json">JSON</button>
+      </div>
+      <div id="view-table"></div>
+      <pre id="view-json" style="display:none"></pre>
+      <div class="meta" id="meta"></div>
+    </section>
+  </div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const tokenInput = $('token');
+  const statusEl = $('status');
+  const resultsEl = $('results');
+
+  // Persist token in localStorage.
+  tokenInput.value = localStorage.getItem('apifyToken') || '';
+  tokenInput.addEventListener('input', () => {
+    localStorage.setItem('apifyToken', tokenInput.value.trim());
+  });
+
+  function setStatus(kind, msg, spinner = false) {
+    statusEl.className = `status show ${kind}`;
+    statusEl.innerHTML = (spinner ? '<span class="spinner"></span>' : '') + msg;
+  }
+
+  function clearStatus() {
+    statusEl.className = 'status';
+    statusEl.textContent = '';
+  }
+
+  function buildInput() {
+    const codes = $('fundCodes').value.split(',').map(s => s.trim()).filter(Boolean);
+    const mode = $('mode').value;
+    const proxyGroup = $('proxyGroup').value;
+    const proxyCountry = $('proxyCountry').value.trim().toUpperCase();
+
+    const input = {
+      mode,
+      fundType: $('fundType').value,
+      maxRequestsPerMinute: Number($('rpm').value) || 20,
+      proxy: proxyGroup
+        ? { useApifyProxy: true, apifyProxyGroups: [proxyGroup], ...(proxyCountry ? { apifyProxyCountry: proxyCountry } : {}) }
+        : { useApifyProxy: false },
+    };
+    if (codes.length > 0) input.fundCodes = codes;
+    if (mode === 'historical') {
+      input.startDate = $('startDate').value;
+      input.endDate = $('endDate').value;
+    } else if (mode === 'daily' || mode === 'fund_list') {
+      if ($('endDate').value) input.endDate = $('endDate').value;
+    }
+    return input;
+  }
+
+  $('copyInput').addEventListener('click', async () => {
+    const json = JSON.stringify(buildInput(), null, 2);
+    try {
+      await navigator.clipboard.writeText(json);
+      setStatus('success', 'Input JSON panoya kopyalandı.');
+      setTimeout(clearStatus, 2000);
+    } catch {
+      setStatus('error', 'Kopyalanamadı — manuel seç: ' + json);
+    }
+  });
+
+  $('run').addEventListener('click', async () => {
+    const token = tokenInput.value.trim();
+    const actorId = $('actorId').value.trim();
+    if (!token) return setStatus('error', 'Önce Apify API token gir.');
+    if (!actorId) return setStatus('error', 'Actor ID boş olamaz.');
+
+    const input = buildInput();
+    setStatus('running', 'Actor çalışıyor… (ilk run 30-90 sn sürebilir)', true);
+    resultsEl.classList.remove('show');
+
+    const started = Date.now();
+    const url = `https://api.apify.com/v2/acts/${encodeURIComponent(actorId)}/run-sync-get-dataset-items?token=${encodeURIComponent(token)}`;
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+      const elapsed = ((Date.now() - started) / 1000).toFixed(1);
+
+      if (!res.ok) {
+        const text = await res.text();
+        setStatus('error', `HTTP ${res.status} — ${text.slice(0, 300)}`);
+        return;
+      }
+
+      const data = await res.json();
+      renderResults(data);
+      const count = Array.isArray(data) ? data.length : 0;
+      setStatus('success', `Tamamlandı: ${count} kayıt, ${elapsed} sn.`);
+    } catch (err) {
+      setStatus('error', 'Hata: ' + err.message);
+    }
+  });
+
+  function renderResults(data) {
+    resultsEl.classList.add('show');
+    $('view-json').textContent = JSON.stringify(data, null, 2);
+    $('meta').textContent = Array.isArray(data)
+      ? `${data.length} kayıt`
+      : 'Response array değil.';
+
+    const tableEl = $('view-table');
+    tableEl.innerHTML = '';
+    if (!Array.isArray(data) || data.length === 0) {
+      tableEl.innerHTML = '<div class="help">Sonuç boş.</div>';
+      return;
+    }
+    const cols = new Set();
+    data.forEach(row => {
+      if (row && typeof row === 'object') Object.keys(row).forEach(k => cols.add(k));
+    });
+    const columns = [...cols];
+
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const trh = document.createElement('tr');
+    columns.forEach(c => {
+      const th = document.createElement('th');
+      th.textContent = c;
+      trh.appendChild(th);
+    });
+    thead.appendChild(trh);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    data.forEach(row => {
+      const tr = document.createElement('tr');
+      columns.forEach(c => {
+        const td = document.createElement('td');
+        const val = row[c];
+        td.textContent = typeof val === 'object' ? JSON.stringify(val) : String(val ?? '');
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    tableEl.appendChild(table);
+  }
+
+  // Tabs.
+  document.querySelectorAll('.tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const view = btn.dataset.view;
+      $('view-table').style.display = view === 'table' ? 'block' : 'none';
+      $('view-json').style.display = view === 'json' ? 'block' : 'none';
+    });
+  });
+</script>
+</body>
+</html>

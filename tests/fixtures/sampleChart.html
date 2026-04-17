@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head><title>FonAnaliz</title></head>
+<body>
+  <div id="MainContent_FonFiyatGrafik"></div>
+  <script type="text/javascript">
+    $(document).ready(function () {
+        chartMainContent_FonFiyatGrafik = Highcharts.chart('MainContent_FonFiyatGrafik', {
+            chart: { type: 'line' },
+            title: { text: 'Fiyat Grafik' },
+            series: [{
+                name: 'Fiyat',
+                data: [
+                    [1704067200000, 3.1234],
+                    [1704153600000, 3.1456],
+                    [1704240000000, 3.1678],
+                    [1704326400000, 3.1890]
+                ]
+            }]
+        });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+apps/api/dist/
+apps/web/.next/
+apps/web/out/
+apps/web/tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+tefas.db*
+tefas-backup*.db
+
+# Runtime
+tefas-cookies.json
+storage/
+apify_storage/
+.actor/storage/
+*.log
+coverage/
+.vitest/
+
+# Editor
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Local plans/notes
+.claude/

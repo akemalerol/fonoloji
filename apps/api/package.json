@@ -1,0 +1,42 @@
+{
+  "name": "@fonoloji/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "ingest": "tsx src/scripts/ingest.ts",
+    "ingest:historical": "tsx src/scripts/ingestHistorical.ts",
+    "seed:mock": "tsx src/scripts/seedMock.ts",
+    "recompute": "tsx src/scripts/recomputeAnalytics.ts",
+    "warmup": "tsx src/scripts/warmupSession.ts",
+    "ingest:pw": "tsx src/scripts/ingestHistoricalPlaywright.ts",
+    "ingest:meta": "tsx src/scripts/ingestMeta.ts",
+    "ingest:portfolio": "tsx src/scripts/ingestPortfolio.ts",
+    "ingest:profile": "tsx src/scripts/ingestProfile.ts",
+    "admin:promote": "tsx src/scripts/adminPromote.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^9.4.0",
+    "@fastify/cors": "^9.0.1",
+    "@fastify/helmet": "^11.1.1",
+    "@fastify/jwt": "^8.0.1",
+    "better-sqlite3": "^11.1.2",
+    "cheerio": "^1.0.0",
+    "dayjs": "^1.11.11",
+    "fastify": "^4.28.1",
+    "node-cron": "^3.0.3",
+    "pino-pretty": "^11.2.2",
+    "playwright": "^1.47.2",
+    "resend": "^4.8.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node-cron": "^3.0.11",
+    "tsx": "^4.19.0"
+  }
+}
