@@ -35,15 +35,16 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
     }
   };
 
+  // TEFAS ingest — weekdays only (Pzt-Cum). Weekend'de yeni fiyat yayınlanmıyor.
   const schedule: Array<{ expr: string; label: string }> = [
-    { expr: '0 7 * * *',  label: '07:00' },
-    { expr: '0 8 * * *',  label: '08:00' },
-    { expr: '30 8 * * *', label: '08:30' },
-    { expr: '0 9 * * *',  label: '09:00' },
-    { expr: '30 9 * * *', label: '09:30' },
-    { expr: '0 10 * * *', label: '10:00' },
-    { expr: '0 11 * * *', label: '11:00' },
-    { expr: '0 12 * * *', label: '12:00' },
+    { expr: '0 7 * * 1-5',  label: '07:00' },
+    { expr: '0 8 * * 1-5',  label: '08:00' },
+    { expr: '30 8 * * 1-5', label: '08:30' },
+    { expr: '0 9 * * 1-5',  label: '09:00' },
+    { expr: '30 9 * * 1-5', label: '09:30' },
+    { expr: '0 10 * * 1-5', label: '10:00' },
+    { expr: '0 11 * * 1-5', label: '11:00' },
+    { expr: '0 12 * * 1-5', label: '12:00' },
   ];
 
   for (const { expr, label } of schedule) {
@@ -88,11 +89,36 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
     }
   }, { timezone: 'Europe/Istanbul' });
 
-  // Live market tickers — self-paced refresher
-  // 08:00-18:00 TR → every 10s (near real-time BIST100 + FX)
-  // Off-hours → every 5 min (FX only stays valid)
+  // Live market tickers — global FX açılış penceresi boyunca "anlık" çek.
+  // Pencere: Pazar 23:59 TR → Cumartesi 01:00 TR (FX piyasasının haftalık açık saatleri).
+  // Pencere dışı (Cmt 01:00 → Pzr 23:59) tüm piyasalar kapalı, ingest no-op.
+  const getTrNow = (): { day: number; hour: number; minute: number } => {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/Istanbul',
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date());
+    const wd = parts.find((p) => p.type === 'weekday')?.value ?? 'Mon';
+    const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    return {
+      day: dayMap[wd] ?? 1,
+      hour: Number(parts.find((p) => p.type === 'hour')?.value ?? '0'),
+      minute: Number(parts.find((p) => p.type === 'minute')?.value ?? '0'),
+    };
+  };
+  const isLiveWindow = (): boolean => {
+    const { day, hour, minute } = getTrNow();
+    if (day >= 1 && day <= 5) return true; // Pzt-Cum: sürekli açık
+    if (day === 6 && hour < 1) return true; // Cumartesi 00:00-01:00
+    if (day === 0 && hour === 23 && minute >= 59) return true; // Pazar 23:59
+    return false;
+  };
+
   let liveMarketRunning = false;
   const liveMarketTick = async () => {
+    if (!isLiveWindow()) return;
     if (liveMarketRunning) return;
     liveMarketRunning = true;
     try {
@@ -103,18 +129,10 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
       liveMarketRunning = false;
     }
   };
-  const isTrMarketHours = () => {
-    const fmt = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Europe/Istanbul',
-      hour: '2-digit',
-      hour12: false,
-    });
-    const h = Number(fmt.format(new Date()));
-    return h >= 8 && h < 18;
-  };
   let liveMarketTimer: NodeJS.Timeout | null = null;
   const scheduleNextTick = () => {
-    const delay = isTrMarketHours() ? 10_000 : 5 * 60_000;
+    // Pencere içindeyken 5s (Yahoo rate limit içinde), dışında 30dk (uyur).
+    const delay = isLiveWindow() ? 5_000 : 30 * 60_000;
     liveMarketTimer = setTimeout(async () => {
       await liveMarketTick();
       scheduleNextTick();
@@ -125,8 +143,8 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
     liveMarketTick().finally(() => scheduleNextTick());
   }, 3000);
 
-  // Portfolio allocation — daily at 13:00 TR (after last fund ingest)
-  cron.schedule('0 13 * * *', async () => {
+  // Portfolio allocation — weekdays at 13:00 TR (after last fund ingest)
+  cron.schedule('0 13 * * 1-5', async () => {
     log.info('[cron] portfolio ingest başlıyor');
     try {
       const r = await runPortfolioIngest({ days: 7 });

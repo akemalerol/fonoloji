@@ -44,25 +44,30 @@ export interface PortfolioSlice {
 }
 
 export function PortfolioDonut({ data, size = 240 }: { data: PortfolioSlice[]; size?: number }) {
-  const prepared = useMemo(
-    () =>
-      data
-        .filter((s) => s.value > 0.05)
-        .sort((a, b) => b.value - a.value)
-        .map((s) => ({
-          key: s.key,
-          name: LABELS[s.key] ?? s.key,
-          value: Math.round(s.value * 100) / 100,
-          color: COLORS[s.key] ?? '#A855F7',
-          icon: ICONS[s.key] ?? '◌',
-        })),
-    [data],
-  );
+  // TEFAS bazı fonlarda negatif dağılım (repo borç, türev pozisyonu vb.) raporluyor.
+  // Pozitifler pie'da, negatifler legend'de ayrı gösterilir — toplam %100'e dengelenir.
+  const { positives, negatives, total } = useMemo(() => {
+    const rounded = data
+      .filter((s) => Math.abs(s.value) > 0.05)
+      .map((s) => ({
+        key: s.key,
+        name: LABELS[s.key] ?? s.key,
+        value: Math.round(s.value * 100) / 100,
+        color: COLORS[s.key] ?? '#A855F7',
+        icon: ICONS[s.key] ?? '◌',
+      }));
+    const pos = rounded.filter((s) => s.value > 0).sort((a, b) => b.value - a.value);
+    const neg = rounded.filter((s) => s.value < 0).sort((a, b) => a.value - b.value);
+    return {
+      positives: pos,
+      negatives: neg,
+      total: rounded.reduce((a, b) => a + b.value, 0),
+    };
+  }, [data]);
 
-  const total = prepared.reduce((a, b) => a + b.value, 0);
-  const largest = prepared[0];
+  const largest = positives[0];
   const [active, setActive] = useState<string | null>(null);
-  const activeSlice = prepared.find((p) => p.key === active) ?? largest;
+  const activeSlice = [...positives, ...negatives].find((p) => p.key === active) ?? largest;
 
   return (
     <div className="grid grid-cols-1 items-center gap-6 md:grid-cols-[auto_1fr]">
@@ -70,16 +75,16 @@ export function PortfolioDonut({ data, size = 240 }: { data: PortfolioSlice[]; s
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
-              data={prepared}
+              data={positives}
               dataKey="value"
               innerRadius="62%"
               outerRadius="100%"
               paddingAngle={1.5}
               isAnimationActive={false}
-              onMouseEnter={(_, idx) => setActive(prepared[idx]?.key ?? null)}
+              onMouseEnter={(_, idx) => setActive(positives[idx]?.key ?? null)}
               onMouseLeave={() => setActive(null)}
             >
-              {prepared.map((entry) => (
+              {positives.map((entry) => (
                 <Cell
                   key={entry.key}
                   fill={entry.color}
@@ -110,7 +115,7 @@ export function PortfolioDonut({ data, size = 240 }: { data: PortfolioSlice[]; s
       </div>
 
       <ul className="grid grid-cols-1 gap-1.5 text-sm sm:grid-cols-1">
-        {prepared.map((s) => (
+        {positives.map((s) => (
           <li
             key={s.key}
             className={`flex items-center justify-between gap-3 rounded-md px-2 py-1.5 transition-colors ${
@@ -140,9 +145,43 @@ export function PortfolioDonut({ data, size = 240 }: { data: PortfolioSlice[]; s
             </span>
           </li>
         ))}
-        {total < 99.5 && (
+        {negatives.length > 0 && (
+          <>
+            <li className="mt-1 border-t border-border/40 pt-2 text-[10px] uppercase tracking-wider text-muted-foreground">
+              Kısa pozisyon / borç
+            </li>
+            {negatives.map((s) => (
+              <li
+                key={s.key}
+                className={`flex items-center justify-between gap-3 rounded-md px-2 py-1.5 transition-colors ${
+                  active === s.key ? 'bg-white/5' : 'hover:bg-white/[0.03]'
+                }`}
+                onMouseEnter={() => setActive(s.key)}
+                onMouseLeave={() => setActive(null)}
+              >
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-loss/40"
+                    style={{ background: 'transparent' }}
+                  />
+                  <span className="flex items-center gap-1.5 truncate text-muted-foreground">
+                    <span className="text-xs opacity-70">{s.icon}</span>
+                    <span className="truncate">{s.name}</span>
+                  </span>
+                </span>
+                <span className="w-14 text-right font-mono text-xs font-semibold text-loss tabular-nums">
+                  %{s.value.toFixed(2)}
+                </span>
+              </li>
+            ))}
+          </>
+        )}
+        {Math.abs(total - 100) > 0.5 && (
           <li className="mt-2 border-t border-border/40 pt-2 text-[11px] text-muted-foreground">
-            Toplam: %{total.toFixed(2)} (TEFAS ham veri {'<'}%100 olabilir)
+            Net toplam: %{total.toFixed(2)}{' '}
+            {total > 100
+              ? '(fazla — TEFAS\u2019de kapanmamış eksi pozisyon olabilir)'
+              : '(TEFAS ham veri <%100)'}
           </li>
         )}
       </ul>
