@@ -30,6 +30,11 @@ const nextConfig = {
       },
     ];
   },
+  async redirects() {
+    return [
+      { source: '/kategori', destination: '/kategoriler', permanent: true },
+    ];
+  },
   async rewrites() {
     const base = process.env.FONOLOJI_API_URL ?? 'http://localhost:4000';
     return [

@@ -38,7 +38,7 @@ export default async function CategoryPage({ params }: { params: { ad: string } 
     <div className="container py-10">
       <div className="mb-6">
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          <Link href="/kategori" className="hover:text-foreground">Kategoriler</Link>
+          <Link href="/kategoriler" className="hover:text-foreground">Kategoriler</Link>
           <span>/</span>
           <Link href="/fonlar" className="hover:text-foreground">Fonlar</Link>
         </div>

@@ -10,7 +10,7 @@ import { ThemeToggle } from './theme-toggle';
 
 const NAV = [
   { href: '/fonlar', label: 'Fonlar' },
-  { href: '/kategori', label: 'Kategoriler' },
+  { href: '/kategoriler', label: 'Kategoriler' },
   { href: '/kesifler', label: 'Keşifler' },
   { href: '/arac', label: 'Araçlar' },
   { href: '/ekonomi', label: 'Ekonomi' },
