@@ -10,6 +10,7 @@ import { runCpiIngest, seedUpcomingAnnouncements } from '../scripts/ingestCpi.js
 import { runLiveMarketIngest } from '../scripts/ingestLiveMarket.js';
 import { postTweet } from '../services/x.js';
 import { runKapHoldingsIngest } from '../scripts/ingestKapHoldings.js';
+import { runKapDisclosuresIngest } from '../scripts/ingestKapDisclosures.js';
 import { runEstimates, verifyEstimates } from '../scripts/navEstimateDaily.js';
 import { runPortfolioIngest } from '../scripts/ingestPortfolio.js';
 import { runAlertChecker, runFundChangeDetector } from './alerts.js';
@@ -162,6 +163,17 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
     }
   }, { timezone: 'Europe/Istanbul' });
 
+  // KAP fon bildirimleri — 15 dk'da bir. Sadece fon bildirimleri (disclosure/funds/byCriteria).
+  // 24/7 açık; KAP hafta sonu da zaman zaman yayınlıyor. Pencere son 3 gün, idempotent.
+  cron.schedule('*/15 * * * *', async () => {
+    try {
+      const r = await runKapDisclosuresIngest({ days: 3 });
+      if (r.inserted > 0) log.info(`[cron] KAP disclosures: +${r.inserted} yeni (${r.fetched} toplam)`);
+    } catch (err) {
+      log.error('[cron] KAP disclosures hata:', err);
+    }
+  }, { timezone: 'Europe/Istanbul' });
+
   // NAV estimates — save after market close + 15min delay (borsa 18:10 kapanır, veriler 18:30'da netleşir)
   cron.schedule('30 18 * * 1-5', async () => {
     log.info('[cron] NAV tahminleri kaydediliyor');
@@ -223,5 +235,5 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
     }
   }, { timezone: 'Europe/Istanbul' });
 
-  log.info(`[cron] ${schedule.map((s) => s.label).join(', ')} + CPI + portfolio + alerts + fund-changes + tweet-scheduler kaydedildi`);
+  log.info(`[cron] ${schedule.map((s) => s.label).join(', ')} + CPI + portfolio + alerts + fund-changes + KAP-disclosures + tweet-scheduler kaydedildi`);
 }

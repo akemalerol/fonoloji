@@ -210,6 +210,40 @@ export const fundsRoute: FastifyPluginAsync = async (app) => {
     return { code, holdings: rows };
   });
 
+  app.get('/funds/:code/disclosures', async (req) => {
+    const { code } = req.params as { code: string };
+    const { limit = '20' } = req.query as Record<string, string>;
+    const db = getDb();
+    const rows = db
+      .prepare(
+        `SELECT disclosure_index, subject, kap_title, rule_type, period, year,
+                publish_date, attachment_count, summary
+         FROM kap_disclosures
+         WHERE fund_code = ?
+         ORDER BY publish_date DESC
+         LIMIT ?`,
+      )
+      .all(code.toUpperCase(), Math.min(Number(limit) || 20, 100));
+    return { code, items: rows };
+  });
+
+  app.get('/disclosures/recent', async (req) => {
+    const { limit = '50' } = req.query as Record<string, string>;
+    const db = getDb();
+    const rows = db
+      .prepare(
+        `SELECT d.disclosure_index, d.fund_code, f.name as fund_name,
+                d.subject, d.kap_title, d.publish_date, d.attachment_count
+         FROM kap_disclosures d
+         LEFT JOIN funds f ON f.code = d.fund_code
+         WHERE d.fund_code IS NOT NULL
+         ORDER BY d.publish_date DESC
+         LIMIT ?`,
+      )
+      .all(Math.min(Number(limit) || 50, 200));
+    return { items: rows };
+  });
+
   app.get('/funds/:code/live-estimate', async (req) => {
     const { code } = req.params as { code: string };
     const db = getDb();

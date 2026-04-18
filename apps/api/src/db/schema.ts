@@ -335,6 +335,24 @@ export const SCHEMA_STATEMENTS: string[] = [
     PRIMARY KEY (code, estimate_date)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_nav_estimates_date ON nav_estimates(estimate_date)`,
+
+  // KAP disclosures — fund-scoped only (KVH member type). Fed by disclosure/funds/byCriteria.
+  `CREATE TABLE IF NOT EXISTS kap_disclosures (
+    disclosure_index INTEGER PRIMARY KEY,
+    fund_code TEXT,
+    publish_date INTEGER NOT NULL,
+    subject TEXT,
+    kap_title TEXT,
+    rule_type TEXT,
+    period INTEGER,
+    year INTEGER,
+    attachment_count INTEGER DEFAULT 0,
+    summary TEXT,
+    fetched_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_kap_disclosures_fund ON kap_disclosures(fund_code, publish_date DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_kap_disclosures_recent ON kap_disclosures(publish_date DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_kap_disclosures_subject ON kap_disclosures(subject)`,
 ];
 
 const ADDITIONAL_COLUMNS: Array<{ table: string; column: string; type: string }> = [

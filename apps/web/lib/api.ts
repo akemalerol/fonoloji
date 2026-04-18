@@ -269,6 +269,21 @@ export const api = {
       stats: CategoryStat[];
       funds: FundRow[];
     }>(`/api/categories/${encodeURIComponent(name)}`),
+  disclosures: (code: string, limit = 20) =>
+    fetchJson<{
+      code: string;
+      items: Array<{
+        disclosure_index: number;
+        subject: string | null;
+        kap_title: string | null;
+        rule_type: string | null;
+        period: number | null;
+        year: number | null;
+        publish_date: number;
+        attachment_count: number;
+        summary: string | null;
+      }>;
+    }>(`/api/funds/${encodeURIComponent(code)}/disclosures?limit=${limit}`),
   holdings: (code: string) =>
     fetchJson<{
       code: string;

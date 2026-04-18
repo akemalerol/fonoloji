@@ -1,4 +1,4 @@
-import { Activity, ArrowRight, Calendar, ExternalLink, Shield, Sparkles, TrendingDown, TrendingUp, Users, Wallet } from 'lucide-react';
+import { Activity, ArrowRight, Calendar, ExternalLink, FileText, Shield, Sparkles, TrendingDown, TrendingUp, Users, Wallet } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChangePill } from '@/components/fx/change-pill';
@@ -68,13 +68,14 @@ export default async function FundDetailPage({
   if (!detail) notFound();
 
   const period = searchParams.period ?? '1y';
-  const [history, monthly, drawdown, timeline, advanced, aiSummary] = await Promise.all([
+  const [history, monthly, drawdown, timeline, advanced, aiSummary, disclosures] = await Promise.all([
     api.getHistory(code, period),
     api.getMonthly(code).catch(() => ({ code, months: [] })),
     api.getDrawdown(code).catch(() => ({ code, points: [] })),
     api.getPortfolioTimeline(code, 180).catch(() => ({ code, points: [] })),
     api.advanced(code).catch(() => ({ code, stress_periods: [], seasonality: [], leakage: null, bench_alpha: { '3m': null, '1y': null } })),
     api.aiSummary(code).catch(() => ({ code, summary: null as string | null, cached: false, model: undefined as string | undefined })),
+    api.disclosures(code, 10).catch(() => ({ code, items: [] as Array<{ disclosure_index: number; subject: string | null; kap_title: string | null; rule_type: string | null; period: number | null; year: number | null; publish_date: number; attachment_count: number; summary: string | null }> })),
   ]);
   const points = history.points;
   const firstPrice = points[0]?.price ?? 0;
@@ -468,6 +469,65 @@ export default async function FundDetailPage({
           </div>
         )}
       </div>
+
+      {disclosures.items.length > 0 && (
+        <div className="panel mt-8 p-6">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                <FileText className="h-3.5 w-3.5 text-verdigris-400" /> Son KAP bildirimleri
+              </h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Bu fona ait son {disclosures.items.length} kamuyu aydınlatma bildirimi — portföy raporundan birleşmeye, isim değişikliğinden duyuruya.
+              </p>
+            </div>
+          </div>
+          <ul className="divide-y divide-border/40">
+            {disclosures.items.map((d) => {
+              const ts = new Date(d.publish_date);
+              const dateStr = `${String(ts.getDate()).padStart(2, '0')}.${String(ts.getMonth() + 1).padStart(2, '0')}.${ts.getFullYear()}`;
+              const timeStr = `${String(ts.getHours()).padStart(2, '0')}:${String(ts.getMinutes()).padStart(2, '0')}`;
+              const title = d.kap_title ?? d.subject ?? 'Bildirim';
+              return (
+                <li key={d.disclosure_index} className="py-3 first:pt-0 last:pb-0">
+                  <a
+                    href={`https://www.kap.org.tr/tr/Bildirim/${d.disclosure_index}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group flex items-start justify-between gap-4"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {d.subject && (
+                          <span className="inline-flex items-center rounded-md border border-verdigris-500/30 bg-verdigris-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-verdigris-300">
+                            {d.subject}
+                          </span>
+                        )}
+                        {d.attachment_count > 0 && (
+                          <span className="font-mono text-[10px] text-muted-foreground/70">
+                            {d.attachment_count} ek
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-1 truncate text-sm text-foreground/90 group-hover:text-foreground">
+                        {title}
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="font-mono text-xs tabular-nums text-foreground/80">{dateStr}</div>
+                      <div className="font-mono text-[10px] tabular-nums text-muted-foreground">{timeStr}</div>
+                    </div>
+                    <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/60 group-hover:text-brand-400" />
+                  </a>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="mt-4 text-[10px] text-muted-foreground/70">
+            Kaynak: kap.org.tr · her 15 dk'da bir senkronlanır
+          </div>
+        </div>
+      )}
 
       {/* AI summary (if configured) */}
       {aiSummary.summary && (
