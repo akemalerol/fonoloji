@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { getDb } from '../db/index.js';
 import { estimateFundNav } from '../services/liveEstimate.js';
+import { backfillFundKapDisclosures } from '../scripts/ingestKapDisclosures.js';
 
 export const fundsRoute: FastifyPluginAsync = async (app) => {
   app.get('/funds', async (req) => {
@@ -214,6 +215,21 @@ export const fundsRoute: FastifyPluginAsync = async (app) => {
     const { code } = req.params as { code: string };
     const { limit = '20' } = req.query as Record<string, string>;
     const db = getDb();
+    const upper = code.toUpperCase();
+
+    // Fire-and-forget: hiç backfill edilmemiş fonlar için arka planda 180 günlük çekim.
+    // İlk ziyarette response bekletmiyoruz, sonraki ziyarette veri gelmiş oluyor.
+    const fund = db
+      .prepare(`SELECT kap_backfilled_at FROM funds WHERE code = ?`)
+      .get(upper) as { kap_backfilled_at: number | null } | undefined;
+    if (fund && !fund.kap_backfilled_at) {
+      setImmediate(() => {
+        backfillFundKapDisclosures(upper).catch((err) => {
+          req.log.warn({ err: err.message, code: upper }, 'kap backfill hata');
+        });
+      });
+    }
+
     const rows = db
       .prepare(
         `SELECT disclosure_index, subject, kap_title, rule_type, period, year,
@@ -223,8 +239,8 @@ export const fundsRoute: FastifyPluginAsync = async (app) => {
          ORDER BY publish_date DESC
          LIMIT ?`,
       )
-      .all(code.toUpperCase(), Math.min(Number(limit) || 20, 100));
-    return { code, items: rows };
+      .all(upper, Math.min(Number(limit) || 20, 100));
+    return { code: upper, items: rows, backfillTriggered: Boolean(fund && !fund.kap_backfilled_at) };
   });
 
   app.get('/disclosures/recent', async (req) => {

@@ -353,6 +353,20 @@ export const SCHEMA_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_kap_disclosures_fund ON kap_disclosures(fund_code, publish_date DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_kap_disclosures_recent ON kap_disclosures(publish_date DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_kap_disclosures_subject ON kap_disclosures(subject)`,
+
+  // Per-fund KAP alerts — user opts in for a single fund; email sent on new disclosure.
+  `CREATE TABLE IF NOT EXISTS kap_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    fund_code TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_notified_at INTEGER,
+    created_at INTEGER NOT NULL,
+    UNIQUE(user_id, fund_code),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_kap_alerts_user ON kap_alerts(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_kap_alerts_fund ON kap_alerts(fund_code, enabled)`,
 ];
 
 const ADDITIONAL_COLUMNS: Array<{ table: string; column: string; type: string }> = [
@@ -382,6 +396,8 @@ const ADDITIONAL_COLUMNS: Array<{ table: string; column: string; type: string }>
   { table: 'users', column: 'custom_daily_quota', type: 'INTEGER' },
   { table: 'users', column: 'custom_rpm', type: 'INTEGER' },
   { table: 'users', column: 'limit_note', type: 'TEXT' },
+  // KAP bildirimleri: fon bazında son "derin backfill" zamanı (null = henüz backfill edilmemiş)
+  { table: 'funds', column: 'kap_backfilled_at', type: 'INTEGER' },
 ];
 
 export function applySchema(db: Database): void {

@@ -85,6 +85,79 @@ export const portfolioRoute: FastifyPluginAsync = async (app) => {
     return reply.code(result.changes > 0 ? 200 : 404).send({ ok: result.changes > 0 });
   });
 
+  // KAP ALERTS — per-fund, no threshold. User opts in for a fund; email sent on new disclosure.
+  app.get('/kap-alerts', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const db = getDb();
+    const rows = db
+      .prepare(
+        `SELECT a.id, a.fund_code, a.enabled, a.last_notified_at, a.created_at, f.name
+         FROM kap_alerts a LEFT JOIN funds f ON f.code = a.fund_code
+         WHERE a.user_id = ? ORDER BY a.created_at DESC`,
+      )
+      .all(user.id);
+    return { items: rows };
+  });
+
+  app.get('/kap-alerts/status', async (req, reply) => {
+    const user = await readUser(req);
+    if (!user) return { enabled: false, anonymous: true };
+    const { code } = req.query as { code?: string };
+    if (!code) return reply.code(400).send({ error: 'code gerekli' });
+    const db = getDb();
+    const row = db
+      .prepare(`SELECT id, enabled FROM kap_alerts WHERE user_id = ? AND fund_code = ?`)
+      .get(user.id, code.toUpperCase()) as { id: number; enabled: number } | undefined;
+    return { enabled: Boolean(row && row.enabled), id: row?.id ?? null };
+  });
+
+  const kapAlertSchema = z.object({
+    code: z.string().min(2).max(8).transform((s) => s.toUpperCase()),
+  });
+
+  app.post('/kap-alerts', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const parsed = kapAlertSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'Geçersiz istek' });
+    const db = getDb();
+
+    // Max 50 KAP alarmı — yüksek tuttum, bu sadece fon başına flag
+    const count = (db
+      .prepare(`SELECT COUNT(*) as c FROM kap_alerts WHERE user_id = ? AND enabled = 1`)
+      .get(user.id) as { c: number }).c;
+    if (count >= 50) {
+      return reply.code(400).send({ error: 'Max 50 aktif KAP takibi' });
+    }
+
+    // Upsert — aynı fon için tekrar enable edilebilsin
+    const existing = db
+      .prepare(`SELECT id, enabled FROM kap_alerts WHERE user_id = ? AND fund_code = ?`)
+      .get(user.id, parsed.data.code) as { id: number; enabled: number } | undefined;
+
+    if (existing) {
+      db.prepare(`UPDATE kap_alerts SET enabled = 1 WHERE id = ?`).run(existing.id);
+      return { id: existing.id, ok: true };
+    }
+    const r = db
+      .prepare(`INSERT INTO kap_alerts (user_id, fund_code, enabled, created_at) VALUES (?, ?, 1, ?)`)
+      .run(user.id, parsed.data.code, Date.now());
+    return { id: Number(r.lastInsertRowid), ok: true };
+  });
+
+  app.delete('/kap-alerts', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { code } = req.query as { code?: string };
+    if (!code) return reply.code(400).send({ error: 'code gerekli' });
+    const db = getDb();
+    const result = db
+      .prepare(`UPDATE kap_alerts SET enabled = 0 WHERE user_id = ? AND fund_code = ?`)
+      .run(user.id, code.toUpperCase());
+    return reply.code(result.changes > 0 ? 200 : 404).send({ ok: result.changes > 0 });
+  });
+
   // Fund changes audit (public feed — last 100)
   app.get('/fund-changes', async () => {
     const db = getDb();

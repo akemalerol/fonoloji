@@ -1,4 +1,5 @@
 import { Activity, ArrowRight, Calendar, ExternalLink, FileText, Shield, Sparkles, TrendingDown, TrendingUp, Users, Wallet } from 'lucide-react';
+import { KapAlertToggle } from './kap-alert-toggle';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChangePill } from '@/components/fx/change-pill';
@@ -75,7 +76,7 @@ export default async function FundDetailPage({
     api.getPortfolioTimeline(code, 180).catch(() => ({ code, points: [] })),
     api.advanced(code).catch(() => ({ code, stress_periods: [], seasonality: [], leakage: null, bench_alpha: { '3m': null, '1y': null } })),
     api.aiSummary(code).catch(() => ({ code, summary: null as string | null, cached: false, model: undefined as string | undefined })),
-    api.disclosures(code, 10).catch(() => ({ code, items: [] as Array<{ disclosure_index: number; subject: string | null; kap_title: string | null; rule_type: string | null; period: number | null; year: number | null; publish_date: number; attachment_count: number; summary: string | null }> })),
+    api.disclosures(code, 10).catch(() => ({ code, items: [] as Array<{ disclosure_index: number; subject: string | null; kap_title: string | null; rule_type: string | null; period: number | null; year: number | null; publish_date: number; attachment_count: number; summary: string | null }>, backfillTriggered: false })),
   ]);
   const points = history.points;
   const firstPrice = points[0]?.price ?? 0;
@@ -470,18 +471,23 @@ export default async function FundDetailPage({
         )}
       </div>
 
-      {disclosures.items.length > 0 && (
-        <div className="panel mt-8 p-6">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                <FileText className="h-3.5 w-3.5 text-verdigris-400" /> Son KAP bildirimleri
-              </h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Bu fona ait son {disclosures.items.length} kamuyu aydınlatma bildirimi — portföy raporundan birleşmeye, isim değişikliğinden duyuruya.
-              </p>
-            </div>
+      <div className="panel mt-8 p-6">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              <FileText className="h-3.5 w-3.5 text-verdigris-400" /> Son KAP bildirimleri
+            </h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {disclosures.items.length > 0
+                ? `Bu fona ait son ${disclosures.items.length} kamuyu aydınlatma bildirimi — portföy raporundan birleşmeye, isim değişikliğinden duyuruya.`
+                : disclosures.backfillTriggered
+                  ? 'KAP arşivi arka planda çekiliyor — birkaç dakika sonra sayfayı yenile.'
+                  : 'Bu fona ait kayıtlı KAP bildirimi yok.'}
+            </p>
           </div>
+          <KapAlertToggle code={fund.code} />
+        </div>
+        {disclosures.items.length > 0 && (
           <ul className="divide-y divide-border/40">
             {disclosures.items.map((d) => {
               const ts = new Date(d.publish_date);
@@ -523,11 +529,11 @@ export default async function FundDetailPage({
               );
             })}
           </ul>
-          <div className="mt-4 text-[10px] text-muted-foreground/70">
-            Kaynak: kap.org.tr · her 15 dk'da bir senkronlanır
-          </div>
+        )}
+        <div className="mt-4 text-[10px] text-muted-foreground/70">
+          Kaynak: kap.org.tr · her 15 dk'da bir senkronlanır · fonu ilk ziyarette 180 gün geriye backfill
         </div>
-      )}
+      </div>
 
       {/* AI summary (if configured) */}
       {aiSummary.summary && (

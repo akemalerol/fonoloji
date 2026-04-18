@@ -283,6 +283,7 @@ export const api = {
         attachment_count: number;
         summary: string | null;
       }>;
+      backfillTriggered?: boolean;
     }>(`/api/funds/${encodeURIComponent(code)}/disclosures?limit=${limit}`),
   holdings: (code: string) =>
     fetchJson<{
