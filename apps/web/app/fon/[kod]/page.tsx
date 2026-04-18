@@ -189,8 +189,14 @@ export default async function FundDetailPage({
             <div className="md:flex md:justify-end">
               <LiveEstimate code={fund.code} />
             </div>
-            <div className="mt-2 md:flex md:justify-end">
+            <div className="mt-2 flex flex-wrap items-center gap-2 md:justify-end">
               <WatchlistToggle code={fund.code} />
+              <Link
+                href={`/fon/${fund.code}/fact-sheet`}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border/50 bg-background/40 px-2.5 py-1 text-[11px] text-muted-foreground transition hover:border-brand-500/40 hover:text-foreground"
+              >
+                Fact Sheet
+              </Link>
             </div>
           </div>
         </div>

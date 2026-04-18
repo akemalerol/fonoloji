@@ -75,6 +75,28 @@
   }
 }
 
+/* Print styles — fact sheet yazdırma için */
+@media print {
+  @page { size: A4; margin: 1.5cm; }
+  html, body {
+    background: white !important;
+    background-image: none !important;
+    color: black !important;
+    font-size: 10pt;
+  }
+  body > header, body > footer, nav, .animate-fade-in > header, .animate-fade-in > footer {
+    display: none !important;
+  }
+  .print-sheet {
+    box-shadow: none !important;
+    background: white !important;
+    color: black !important;
+  }
+  .print-sheet * { color: black !important; }
+  .print-sheet a { text-decoration: none !important; color: black !important; }
+  header, footer, nav, .animate-fade-in { background: white !important; }
+}
+
 @layer components {
   .panel {
     @apply rounded-2xl border border-border/60 bg-card/60 backdrop-blur-xl supports-[backdrop-filter]:bg-card/40;
