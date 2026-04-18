@@ -3,6 +3,7 @@ import { getDb } from '../db/index.js';
 import { estimateFundNav } from '../services/liveEstimate.js';
 import { backfillFundKapDisclosures } from '../scripts/ingestKapDisclosures.js';
 import { runKapHoldingsIngest } from '../scripts/ingestKapHoldings.js';
+import { analyzePortfolio, computeFundOverlap, type FundInput } from '../services/portfolioAnalysis.js';
 
 // Per-process throttle — fund başına en fazla ayda 1 holdings refresh denenir.
 const holdingsBackfillTried = new Map<string, number>();
@@ -123,6 +124,30 @@ export const fundsRoute: FastifyPluginAsync = async (app) => {
       .get(code);
 
     return { fund, portfolio };
+  });
+
+  // Portföy X-Ray — ad-hoc analiz, auth gerekmez. POST body: { funds: [{code, weight}] }
+  app.post('/tools/portfolio-xray', async (req, reply) => {
+    const body = req.body as { funds?: FundInput[] } | null;
+    if (!body?.funds || !Array.isArray(body.funds) || body.funds.length === 0) {
+      return reply.code(400).send({ error: 'funds[] gerekli' });
+    }
+    if (body.funds.length > 20) {
+      return reply.code(400).send({ error: 'Max 20 fon' });
+    }
+    const db = getDb();
+    const xray = analyzePortfolio(db, body.funds);
+    return xray;
+  });
+
+  // Fon DNA / overlap — iki fonun holdings benzerliği
+  app.get('/tools/fund-overlap', async (req, reply) => {
+    const { a, b } = req.query as { a?: string; b?: string };
+    if (!a || !b) return reply.code(400).send({ error: 'a ve b parametreleri gerekli' });
+    const db = getDb();
+    const overlap = computeFundOverlap(db, a.toUpperCase(), b.toUpperCase());
+    if (!overlap) return reply.code(404).send({ error: 'En az bir fon için KAP portföy verisi yok' });
+    return overlap;
   });
 
   app.get('/funds/:code/percentile', async (req, reply) => {

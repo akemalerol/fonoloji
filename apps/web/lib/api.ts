@@ -269,6 +269,43 @@ export const api = {
       stats: CategoryStat[];
       funds: FundRow[];
     }>(`/api/categories/${encodeURIComponent(name)}`),
+  portfolioXray: (funds: Array<{ code: string; weight: number }>) =>
+    fetch('/api/tools/portfolio-xray', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ funds }),
+    }).then((r) => r.json()) as Promise<{
+      totalStockPct: number;
+      totalBondPct: number;
+      totalCashPct: number;
+      totalGoldPct: number;
+      totalOtherPct: number;
+      fundCount: number;
+      coveragePct: number;
+      exposures: Array<{
+        asset_name: string;
+        asset_code: string | null;
+        asset_type: string;
+        total_weight: number;
+        contributions: Array<{ fund_code: string; weight: number }>;
+      }>;
+      concentration: Array<{ asset_name: string; weight: number; note: string }>;
+      warnings: string[];
+    }>,
+  fundOverlap: (a: string, b: string) =>
+    fetchJson<{
+      codeA: string;
+      codeB: string;
+      overlapPct: number;
+      bothPct: number;
+      onlyAPct: number;
+      onlyBPct: number;
+      reportDateA: string | null;
+      reportDateB: string | null;
+      commonHoldings: Array<{ asset_name: string; asset_code: string | null; weight_a: number; weight_b: number; min: number }>;
+      uniqueToA: Array<{ asset_name: string; weight: number }>;
+      uniqueToB: Array<{ asset_name: string; weight: number }>;
+    }>(`/api/tools/fund-overlap?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`),
   percentile: (code: string) =>
     fetchJson<{
       code: string;
