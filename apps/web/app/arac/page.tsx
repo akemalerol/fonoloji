@@ -1,4 +1,4 @@
-import { ArrowRight, Calculator, Dna, Radar } from 'lucide-react';
+import { ArrowRight, Calculator, Dna, History, Radar } from 'lucide-react';
 import Link from 'next/link';
 
 export const metadata = {
@@ -27,6 +27,13 @@ const TOOLS = [
     title: 'DCA hesabı',
     desc: '"Aylık düzenli yatırsaydım" — geçmişe dönüp dollar-cost averaging simülasyonu. Tek seferde yatırımla karşılaştırma dahil.',
     accent: 'amber',
+  },
+  {
+    href: '/arac/geri-test',
+    icon: History,
+    title: 'Portföy geri-testi',
+    desc: '2-10 fondan oluşan bir portföyü geçmişe karşı test et. Yıllık getiri, Sharpe, max drawdown, rebalancing etkisi.',
+    accent: 'sky',
   },
   {
     href: '/hesapla',
