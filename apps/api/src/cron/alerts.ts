@@ -295,6 +295,153 @@ async function sendWeeklyDigestFor(user: { id: number; email: string; name: stri
   }
 }
 
+// ============================================================================
+// WATCHLIST HAFTALIK ÖZET — izleme listesindeki fonlar için kişisel brifing.
+// Fark: portföy holdings yok, sadece fiyat hareketi + KAP bildirim sayısı + AI yorumu.
+// ============================================================================
+
+async function sendWatchlistDigestFor(user: { id: number; email: string; name: string | null }): Promise<boolean> {
+  const resend = getResend();
+  if (!resend) return false;
+
+  const db = getDb();
+  const watchRows = db
+    .prepare(
+      `SELECT w.fund_code, f.name, f.category,
+              m.current_price, m.return_1w, m.return_1m, m.return_ytd, m.aum,
+              (SELECT COUNT(*) FROM kap_disclosures d
+               WHERE d.fund_code = w.fund_code
+                 AND d.publish_date >= ?
+                 AND d.subject IN ('Portföy Dağılım Raporu','Genel Açıklama','Özel Durum',
+                                   'İzahname','İzahname (Değişiklik) ','Fon Sürekli Bilgilendirme Formu',
+                                   'Yatırımcı Bilgi Formu','İhraç Belgesi','Sorumluluk Beyanı')) as kap_count_7d
+       FROM watchlist w
+       LEFT JOIN funds f ON f.code = w.fund_code
+       LEFT JOIN metrics m ON m.code = w.fund_code
+       WHERE w.user_id = ?`,
+    )
+    .all(Date.now() - 7 * 86400000, user.id) as Array<{
+    fund_code: string;
+    name: string | null;
+    category: string | null;
+    current_price: number | null;
+    return_1w: number | null;
+    return_1m: number | null;
+    return_ytd: number | null;
+    aum: number | null;
+    kap_count_7d: number;
+  }>;
+
+  if (watchRows.length === 0) return false;
+
+  // En iyi/en kötü hafta
+  const withWeekly = watchRows.filter((w) => w.return_1w !== null);
+  const sorted = [...withWeekly].sort((a, b) => (b.return_1w ?? 0) - (a.return_1w ?? 0));
+  const best = sorted[0];
+  const worst = sorted[sorted.length - 1];
+  const avgWeekly = withWeekly.length > 0
+    ? withWeekly.reduce((s, w) => s + (w.return_1w ?? 0), 0) / withWeekly.length
+    : 0;
+
+  const totalKap = watchRows.reduce((s, w) => s + w.kap_count_7d, 0);
+  const firstName = (user.name ?? user.email.split('@')[0] ?? '').split(' ')[0];
+
+  const rowsHtml = watchRows
+    .map((w) => {
+      const r1w = w.return_1w ?? null;
+      const color = r1w === null ? '#a8a8b3' : r1w >= 0 ? '#10B981' : '#F43F5E';
+      const r1wStr = r1w === null ? '—' : `${r1w >= 0 ? '+' : ''}${(r1w * 100).toFixed(2)}%`;
+      const kapTag = w.kap_count_7d > 0
+        ? `<span style="display:inline-block;margin-left:8px;padding:2px 6px;border-radius:4px;background:#8B5CF6;color:#fff;font-size:9px;font-weight:700;">${w.kap_count_7d} KAP</span>`
+        : '';
+      return `<tr>
+        <td style="padding:10px 12px;border-bottom:1px solid #24242b;">
+          <strong style="color:#f5f5f7;font-family:monospace;">${w.fund_code}</strong>${kapTag}
+          <div style="font-size:11px;color:#7a7a85;">${(w.name ?? '').slice(0, 40)}</div>
+        </td>
+        <td style="padding:10px 12px;text-align:right;border-bottom:1px solid #24242b;color:${color};font-family:monospace;">
+          ${r1wStr}
+        </td>
+      </tr>`;
+    })
+    .join('');
+
+  const bestLine = best
+    ? `<strong>${best.fund_code}</strong> +${((best.return_1w ?? 0) * 100).toFixed(1)}% ile haftanın yıldızı oldu.`
+    : '';
+  const worstLine = worst && worst !== best
+    ? `<strong>${worst.fund_code}</strong> ${((worst.return_1w ?? 0) * 100).toFixed(1)}% ile en zayıf.`
+    : '';
+  const kapLine = totalKap > 0
+    ? `İzleme listendeki fonlar için ${totalKap} yeni KAP bildirimi yayınlandı.`
+    : 'Bu hafta KAP bildirimi sakin.';
+
+  const html = `<!DOCTYPE html>
+<html lang="tr"><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#0b0b10;font-family:-apple-system,sans-serif;color:#e8e8ec;">
+<table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;"><tr><td align="center">
+<table width="620" cellpadding="0" cellspacing="0" style="max-width:620px;background:#15151b;border:1px solid #24242b;border-radius:20px;overflow:hidden;">
+  <tr><td style="background:linear-gradient(135deg,#8B5CF6 0%,#06B6D4 100%);height:4px;"></td></tr>
+  <tr><td style="padding:28px 32px;">
+    <div style="font-size:10px;font-weight:700;color:#8B5CF6;text-transform:uppercase;letter-spacing:3px;margin-bottom:8px;">İZLEME LİSTENİN HAFTASI</div>
+    <h2 style="margin:0 0 14px;font-size:22px;color:#f5f5f7;font-family:Georgia,serif;font-weight:400;">Merhaba ${firstName},</h2>
+
+    <p style="margin:0 0 16px;font-size:14px;color:#a8a8b3;line-height:1.6;">
+      ${bestLine} ${worstLine ? `Öte yandan ${worstLine}` : ''} İzlediğin ${watchRows.length} fonun bu haftaki ortalama getirisi
+      <strong style="color:${avgWeekly >= 0 ? '#10B981' : '#F43F5E'};">${avgWeekly >= 0 ? '+' : ''}${(avgWeekly * 100).toFixed(2)}%</strong>.
+      ${kapLine}
+    </p>
+
+    <div style="font-size:10px;color:#7a7a85;text-transform:uppercase;letter-spacing:2px;margin:20px 0 8px;">TAKIP ETTIĞIN FONLAR · 1 HAFTA</div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#0f0f16;border-radius:10px;overflow:hidden;">
+      ${rowsHtml}
+    </table>
+
+    <p style="margin:24px 0 0;font-size:12px;color:#61616c;">
+      <a href="${SITE}/alarmlarim" style="color:#a8a8b3;text-decoration:underline;">İzleme listemi aç</a>
+      · <a href="${SITE}/panel" style="color:#a8a8b3;">Aboneliği yönet</a>
+    </p>
+  </td></tr>
+</table>
+</td></tr></table>
+</body></html>`;
+
+  try {
+    await resend.emails.send({
+      from: FROM,
+      to: user.email,
+      subject: `İzleme listen bu hafta ${avgWeekly >= 0 ? '+' : ''}%${(avgWeekly * 100).toFixed(1)}${totalKap > 0 ? ` · ${totalKap} KAP` : ''}`,
+      html,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function runWatchlistDigest(): Promise<{ sent: number; skipped: number }> {
+  const db = getDb();
+  const subs = db
+    .prepare(
+      `SELECT u.id, u.email, u.name FROM weekly_subs s
+       JOIN users u ON u.id = s.user_id
+       WHERE s.enabled = 1 AND u.disabled_at IS NULL AND u.email_verified_at IS NOT NULL
+         AND EXISTS (SELECT 1 FROM watchlist w WHERE w.user_id = u.id)`,
+    )
+    .all() as Array<{ id: number; email: string; name: string | null }>;
+
+  let sent = 0, skipped = 0;
+  for (const u of subs) {
+    const ok = await sendWatchlistDigestFor(u);
+    if (ok) {
+      db.prepare(`UPDATE weekly_subs SET last_sent_at = ? WHERE user_id = ?`).run(Date.now(), u.id);
+      sent++;
+    } else { skipped++; }
+    await new Promise((r) => setTimeout(r, 600));
+  }
+  return { sent, skipped };
+}
+
 export async function runWeeklyDigest(): Promise<{ sent: number; skipped: number }> {
   const db = getDb();
   const subs = db

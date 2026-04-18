@@ -13,7 +13,7 @@ import { runKapHoldingsIngest } from '../scripts/ingestKapHoldings.js';
 import { runKapDisclosuresIngest } from '../scripts/ingestKapDisclosures.js';
 import { runEstimates, verifyEstimates } from '../scripts/navEstimateDaily.js';
 import { runPortfolioIngest } from '../scripts/ingestPortfolio.js';
-import { runAlertChecker, runFundChangeDetector } from './alerts.js';
+import { runAlertChecker, runFundChangeDetector, runWatchlistDigest, runWeeklyDigest } from './alerts.js';
 
 export function registerCron(log: { info: (msg: string) => void; error: (...args: unknown[]) => void }): void {
   if (process.env.FONOLOJI_DISABLE_CRON === '1') {
@@ -191,6 +191,19 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
       if (r.verified > 0) log.info(`[cron] NAV verify: ${r.verified} checked, avg error %${r.avgError.toFixed(3)}`);
     } catch (err) {
       log.error('[cron] NAV verify hata:', err);
+    }
+  }, { timezone: 'Europe/Istanbul' });
+
+  // Haftalık özet mail — her Pazartesi 09:00 TR
+  // Hem sanal portföy (runWeeklyDigest) hem watchlist (runWatchlistDigest)
+  cron.schedule('0 9 * * 1', async () => {
+    log.info('[cron] haftalık özet gönderimi başlıyor');
+    try {
+      const p = await runWeeklyDigest();
+      const w = await runWatchlistDigest();
+      log.info(`[cron] haftalık: portföy ${p.sent} sent / ${p.skipped} skip; watchlist ${w.sent} sent / ${w.skipped} skip`);
+    } catch (err) {
+      log.error('[cron] haftalık özet hata:', err);
     }
   }, { timezone: 'Europe/Istanbul' });
 
