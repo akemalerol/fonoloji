@@ -1,6 +1,8 @@
 import { Activity, ArrowRight, Calendar, ExternalLink, Shield, Sparkles, TrendingDown, TrendingUp, Users, Wallet } from 'lucide-react';
 import { KapDisclosuresCard } from './kap-disclosures-card';
 import { PercentileBadges } from './percentile-badges';
+import { SocialProof } from './social-proof';
+import { WatchlistToggle } from './watchlist-toggle';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChangePill } from '@/components/fx/change-pill';
@@ -187,8 +189,13 @@ export default async function FundDetailPage({
             <div className="md:flex md:justify-end">
               <LiveEstimate code={fund.code} />
             </div>
+            <div className="mt-2 md:flex md:justify-end">
+              <WatchlistToggle code={fund.code} />
+            </div>
           </div>
         </div>
+
+        <SocialProof code={fund.code} />
       </div>
 
       {/* Name-decoded tags */}

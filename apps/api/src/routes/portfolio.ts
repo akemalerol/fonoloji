@@ -158,6 +158,106 @@ export const portfolioRoute: FastifyPluginAsync = async (app) => {
     return reply.code(result.changes > 0 ? 200 : 404).send({ ok: result.changes > 0 });
   });
 
+  // WATCHLIST — "izliyorum" listesi. Portföyden ve alarmlardan ayrı.
+  app.get('/watchlist', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const db = getDb();
+    const rows = db
+      .prepare(
+        `SELECT w.id, w.fund_code, w.created_at, f.name, f.category, f.risk_score,
+                m.current_price, m.return_1m, m.return_1y, m.return_ytd, m.aum, m.sharpe_90
+         FROM watchlist w
+         LEFT JOIN funds f ON f.code = w.fund_code
+         LEFT JOIN metrics m ON m.code = w.fund_code
+         WHERE w.user_id = ?
+         ORDER BY w.created_at DESC`,
+      )
+      .all(user.id);
+    return { items: rows };
+  });
+
+  app.get('/watchlist/status', async (req, reply) => {
+    const user = await readUser(req);
+    if (!user) return { enabled: false, anonymous: true };
+    const { code } = req.query as { code?: string };
+    if (!code) return reply.code(400).send({ error: 'code gerekli' });
+    const db = getDb();
+    const row = db
+      .prepare(`SELECT id FROM watchlist WHERE user_id = ? AND fund_code = ?`)
+      .get(user.id, code.toUpperCase()) as { id: number } | undefined;
+    return { enabled: Boolean(row), id: row?.id ?? null };
+  });
+
+  const watchlistSchema = z.object({
+    code: z.string().min(2).max(8).transform((s) => s.toUpperCase()),
+  });
+
+  app.post('/watchlist', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const parsed = watchlistSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'Geçersiz istek' });
+    const db = getDb();
+    // Max 100 watchlist item
+    const count = (db
+      .prepare(`SELECT COUNT(*) as c FROM watchlist WHERE user_id = ?`)
+      .get(user.id) as { c: number }).c;
+    if (count >= 100) return reply.code(400).send({ error: 'Max 100 takip' });
+    try {
+      const r = db
+        .prepare(`INSERT INTO watchlist (user_id, fund_code, created_at) VALUES (?, ?, ?)`)
+        .run(user.id, parsed.data.code, Date.now());
+      return { id: Number(r.lastInsertRowid), ok: true };
+    } catch {
+      // UNIQUE constraint — zaten var
+      return { ok: true };
+    }
+  });
+
+  app.delete('/watchlist', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const { code } = req.query as { code?: string };
+    if (!code) return reply.code(400).send({ error: 'code gerekli' });
+    const db = getDb();
+    const result = db
+      .prepare(`DELETE FROM watchlist WHERE user_id = ? AND fund_code = ?`)
+      .run(user.id, code.toUpperCase());
+    return reply.code(result.changes > 0 ? 200 : 404).send({ ok: result.changes > 0 });
+  });
+
+  // Sosyal kanıt — fon için kaç kullanıcı takipte/alarmda/portföyde.
+  // Privacy: sadece sayı, hiç kimlik sızdırmaz. Anonim / girişsiz kullanıcıya da açık.
+  app.get('/funds/:code/social-proof', async (req) => {
+    const { code } = req.params as { code: string };
+    const db = getDb();
+    const upper = code.toUpperCase();
+    const watchlistCount = (db
+      .prepare(`SELECT COUNT(DISTINCT user_id) as c FROM watchlist WHERE fund_code = ?`)
+      .get(upper) as { c: number }).c;
+    const alertCount = (db
+      .prepare(`SELECT COUNT(DISTINCT user_id) as c FROM price_alerts WHERE code = ? AND enabled = 1`)
+      .get(upper) as { c: number }).c;
+    const kapAlertCount = (db
+      .prepare(`SELECT COUNT(DISTINCT user_id) as c FROM kap_alerts WHERE fund_code = ? AND enabled = 1`)
+      .get(upper) as { c: number }).c;
+    const portfolioCount = (db
+      .prepare(
+        `SELECT COUNT(DISTINCT p.user_id) as c FROM portfolio_holdings h
+         JOIN virtual_portfolios p ON p.id = h.portfolio_id WHERE h.code = ?`,
+      )
+      .get(upper) as { c: number }).c;
+    return {
+      code: upper,
+      watchlist: watchlistCount,
+      priceAlerts: alertCount,
+      kapAlerts: kapAlertCount,
+      portfolio: portfolioCount,
+      total: watchlistCount + alertCount + kapAlertCount + portfolioCount,
+    };
+  });
+
   // Fund changes audit (public feed — last 100)
   app.get('/fund-changes', async () => {
     const db = getDb();

@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, FileText, Loader2, Plus, Trash2 } from 'lucide-react';
+import { Bell, Eye, FileText, Loader2, Plus, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import * as React from 'react';
 import { cn, formatPrice } from '@/lib/utils';
@@ -34,17 +34,32 @@ interface KapAlert {
   name: string | null;
 }
 
+interface WatchItem {
+  id: number;
+  fund_code: string;
+  created_at: number;
+  name: string | null;
+  category: string | null;
+  current_price: number | null;
+  return_1m: number | null;
+  return_1y: number | null;
+  aum: number | null;
+  sharpe_90: number | null;
+}
+
 export function AlertsClient() {
   const [alerts, setAlerts] = React.useState<Alert[]>([]);
   const [kapAlerts, setKapAlerts] = React.useState<KapAlert[]>([]);
+  const [watchlist, setWatchlist] = React.useState<WatchItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [addOpen, setAddOpen] = React.useState(false);
 
   async function load() {
     setLoading(true);
-    const [priceRes, kapRes] = await Promise.all([
+    const [priceRes, kapRes, watchRes] = await Promise.all([
       fetch('/api/alerts', { credentials: 'include' }),
       fetch('/api/kap-alerts', { credentials: 'include' }),
+      fetch('/api/watchlist', { credentials: 'include' }),
     ]);
     if (priceRes.ok) {
       const d = await priceRes.json();
@@ -53,6 +68,10 @@ export function AlertsClient() {
     if (kapRes.ok) {
       const d = await kapRes.json();
       setKapAlerts((d.items as KapAlert[]).filter((a) => a.enabled === 1));
+    }
+    if (watchRes.ok) {
+      const d = await watchRes.json();
+      setWatchlist(d.items);
     }
     setLoading(false);
   }
@@ -70,6 +89,14 @@ export function AlertsClient() {
   async function deleteKapAlert(code: string) {
     if (!confirm(`${code} için KAP takibini kapat?`)) return;
     await fetch(`/api/kap-alerts?code=${encodeURIComponent(code)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+    await load();
+  }
+
+  async function deleteWatch(code: string) {
+    await fetch(`/api/watchlist?code=${encodeURIComponent(code)}`, {
       method: 'DELETE',
       credentials: 'include',
     });
@@ -172,6 +199,88 @@ export function AlertsClient() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* İzleme listesi */}
+      {!loading && (
+        <div className="mt-12">
+          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2 border-b border-border/40 pb-3">
+            <div>
+              <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                <Eye className="h-3 w-3 text-brand-400" />
+                İzleme listesi
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Sahiplenmeden izlediğin fonlar. Fon sayfalarındaki 👁 "İzleme listeme ekle" butonu ile eklersin.
+              </p>
+            </div>
+            <span className="font-mono text-xs text-muted-foreground">
+              {watchlist.length} fon · max 100
+            </span>
+          </div>
+
+          {watchlist.length === 0 ? (
+            <div className="panel p-8 text-center">
+              <Eye className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+              <div className="text-sm">Henüz izlediğin fon yok</div>
+              <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground">
+                Herhangi bir fon sayfasına git → sağ üstteki "İzleme listeme ekle" butonuna tıkla.
+                Portföye almadan takip edebilirsin.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {watchlist.map((w) => {
+                const r1m = w.return_1m ?? null;
+                const r1y = w.return_1y ?? null;
+                return (
+                  <div key={w.id} className="panel flex flex-wrap items-center gap-4 p-4">
+                    <Link
+                      href={`/fon/${w.fund_code}`}
+                      className="inline-flex h-10 w-16 items-center justify-center rounded bg-gradient-to-br from-brand-500 to-verdigris-400 font-mono text-xs font-bold text-background"
+                    >
+                      {w.fund_code}
+                    </Link>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm">{w.name ?? '—'}</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        {w.category ?? '—'}
+                        {w.sharpe_90 !== null && (
+                          <> · <span className="font-mono">Sharpe {w.sharpe_90.toFixed(2)}</span></>
+                        )}
+                      </div>
+                    </div>
+                    <div className="hidden items-center gap-4 text-xs md:flex">
+                      {r1m !== null && (
+                        <div className="text-right">
+                          <div className="text-[10px] text-muted-foreground">1 Ay</div>
+                          <div className={cn('font-mono font-semibold', r1m >= 0 ? 'text-gain' : 'text-loss')}>
+                            {r1m >= 0 ? '+' : ''}{(r1m * 100).toFixed(1)}%
+                          </div>
+                        </div>
+                      )}
+                      {r1y !== null && (
+                        <div className="text-right">
+                          <div className="text-[10px] text-muted-foreground">1 Yıl</div>
+                          <div className={cn('font-mono font-semibold', r1y >= 0 ? 'text-gain' : 'text-loss')}>
+                            {r1y >= 0 ? '+' : ''}{(r1y * 100).toFixed(1)}%
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => deleteWatch(w.fund_code)}
+                      className="rounded p-1 text-muted-foreground hover:bg-loss/20 hover:text-loss"
+                      title="İzleme listesinden çıkar"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

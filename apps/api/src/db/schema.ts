@@ -354,6 +354,19 @@ export const SCHEMA_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_kap_disclosures_recent ON kap_disclosures(publish_date DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_kap_disclosures_subject ON kap_disclosures(subject)`,
 
+  // Watchlist — kullanıcı sahiplenmeden "izliyorum" listesi. Alarmlardan ayrı,
+  // portföyden ayrı. Sosyal kanıt + AI briefing + öneri motoru kullanır.
+  `CREATE TABLE IF NOT EXISTS watchlist (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    fund_code TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE(user_id, fund_code),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_watchlist_user ON watchlist(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_watchlist_fund ON watchlist(fund_code)`,
+
   // Per-fund KAP alerts — user opts in for a single fund; email sent on new disclosure.
   `CREATE TABLE IF NOT EXISTS kap_alerts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
