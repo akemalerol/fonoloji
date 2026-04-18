@@ -269,6 +269,21 @@ export const api = {
       stats: CategoryStat[];
       funds: FundRow[];
     }>(`/api/categories/${encodeURIComponent(name)}`),
+  exposureHeatmap: () =>
+    fetchJson<{
+      items: Array<{
+        category: string;
+        fund_count: number;
+        stock: number;
+        govbond: number;
+        corpbond: number;
+        eurobond: number;
+        cash: number;
+        gold: number;
+        other: number;
+        total_aum: number | null;
+      }>;
+    }>(`/api/insights/exposure-heatmap`),
   portfolioXray: (funds: Array<{ code: string; weight: number }>) =>
     fetch('/api/tools/portfolio-xray', {
       method: 'POST',

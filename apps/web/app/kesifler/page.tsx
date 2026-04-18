@@ -63,6 +63,14 @@ const CARDS = [
     gradient: 'from-brand-500/15 via-verdigris-500/5 to-amber-500/10',
   },
   {
+    href: '/kesifler/isi-haritasi-varlik',
+    title: 'Varlık Isı Haritası',
+    desc: 'Her kategori ortalama ne tutuyor? Hisse, tahvil, altın, nakit — kategori × varlık tipi.',
+    icon: Compass,
+    colSpan: 3 as const,
+    gradient: 'from-verdigris-500/15 to-brand-500/5',
+  },
+  {
     href: '/hesapla',
     title: 'Yatırım Hesaplayıcı',
     desc: 'X TL\'yi Y tarihinde yatırsaydın bugün ne kadardı? Geriye dönük gerçek hesap.',

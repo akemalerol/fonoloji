@@ -158,6 +158,44 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
     return { distribution, topByScore };
   });
 
+  // Net exposure — kategori × varlık tipi ısı haritası
+  // Her kategori için son portföy snapshot'ından ortalama asset breakdown
+  app.get('/insights/exposure-heatmap', async () => {
+    const db = getDb();
+    const rows = db
+      .prepare(
+        `WITH latest AS (
+           SELECT code, MAX(date) as d FROM portfolio_snapshots GROUP BY code
+         ),
+         ps_latest AS (
+           SELECT ps.code, ps.stock, ps.government_bond, ps.treasury_bill,
+                  ps.corporate_bond, ps.eurobond, ps.gold, ps.cash, ps.other
+           FROM portfolio_snapshots ps
+           JOIN latest l ON l.code = ps.code AND l.d = ps.date
+         )
+         SELECT f.category,
+                COUNT(*) as fund_count,
+                AVG(ps.stock) as stock,
+                AVG(ps.government_bond + ps.treasury_bill) as govbond,
+                AVG(ps.corporate_bond) as corpbond,
+                AVG(ps.eurobond) as eurobond,
+                AVG(ps.cash) as cash,
+                AVG(ps.gold) as gold,
+                AVG(ps.other) as other,
+                SUM(m.aum) as total_aum
+         FROM funds f
+         JOIN ps_latest ps ON ps.code = f.code
+         LEFT JOIN metrics m ON m.code = f.code
+         WHERE f.category IS NOT NULL
+           AND ${TEFAS_TRADED}
+         GROUP BY f.category
+         HAVING fund_count >= 3
+         ORDER BY total_aum DESC NULLS LAST`,
+      )
+      .all();
+    return { items: rows };
+  });
+
   app.get('/insights/risk-return', async () => {
     const db = getDb();
     const rows = db
