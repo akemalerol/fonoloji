@@ -1,4 +1,4 @@
-import { ArrowUpRight, Mail } from 'lucide-react';
+import { ArrowUpRight, Facebook, Instagram, Mail } from 'lucide-react';
 import Link from 'next/link';
 
 function XIcon({ className }: { className?: string }) {
@@ -75,6 +75,24 @@ export function SiteFooter() {
                 <ArrowUpRight className="h-3 w-3" />
               </a>
               <a
+                href="https://instagram.com/fonoloji_"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Instagram className="h-3.5 w-3.5" /> @fonoloji_
+                <ArrowUpRight className="h-3 w-3" />
+              </a>
+              <a
+                href="https://fb.com/fonoloji"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Facebook className="h-3.5 w-3.5" /> fb.com/fonoloji
+                <ArrowUpRight className="h-3 w-3" />
+              </a>
+              <a
                 href="mailto:hello@fonoloji.com"
                 className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
               >
@@ -110,19 +128,20 @@ export function SiteFooter() {
             © {new Date().getFullYear()} Fonoloji · Kaynak: tefas.gov.tr (public) · Tüm rakamlar
             bilgilendirme amaçlıdır.
           </div>
-          <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
-            <a
-              href="https://x.com/fonoloji_"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 hover:text-foreground"
-            >
+          <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+            <a href="https://x.com/fonoloji_" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:text-foreground">
               <XIcon className="h-3 w-3" /> @fonoloji_
             </a>
             <span className="text-muted-foreground/40">·</span>
-            <Link href="/iletisim" className="hover:text-foreground">
-              İletişim
-            </Link>
+            <a href="https://instagram.com/fonoloji_" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:text-foreground">
+              <Instagram className="h-3 w-3" /> @fonoloji_
+            </a>
+            <span className="text-muted-foreground/40">·</span>
+            <a href="https://fb.com/fonoloji" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:text-foreground">
+              <Facebook className="h-3 w-3" /> fonoloji
+            </a>
+            <span className="text-muted-foreground/40">·</span>
+            <Link href="/iletisim" className="hover:text-foreground">İletişim</Link>
           </div>
         </div>
       </div>

@@ -93,9 +93,25 @@ function toYmd(d: Date): string {
 }
 
 function parseKapDate(raw: string): number {
-  const isoish = raw.replace(' ', 'T');
-  const t = Date.parse(`${isoish}+03:00`);
-  return Number.isFinite(t) ? t : Date.now();
+  // KAP iki farklı format döndürüyor:
+  //   byCriteria listesi      → "01.04.2026 19:53:31"  (DD.MM.YYYY)
+  //   attachment-detail       → "2026.02.06 17:57:54"  (YYYY.MM.DD)
+  //   (beklenmedik)           → "2026-02-06 17:57:54"  (YYYY-MM-DD)
+  if (!raw) return Date.now();
+
+  const m1 = raw.match(/^(\d{4})[.\-](\d{2})[.\-](\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+  if (m1) {
+    const [, y, mo, d, h, mi, s] = m1;
+    const t = Date.parse(`${y}-${mo}-${d}T${h}:${mi}:${s}+03:00`);
+    if (Number.isFinite(t)) return t;
+  }
+  const m2 = raw.match(/^(\d{2})\.(\d{2})\.(\d{4}) (\d{2}):(\d{2}):(\d{2})/);
+  if (m2) {
+    const [, d, mo, y, h, mi, s] = m2;
+    const t = Date.parse(`${y}-${mo}-${d}T${h}:${mi}:${s}+03:00`);
+    if (Number.isFinite(t)) return t;
+  }
+  return Date.now();
 }
 
 function alertEmailHtml(opts: {
@@ -193,56 +209,105 @@ async function notifyKapAlerts(insertedRecords: KapFundDisclosure[]): Promise<nu
   return sent;
 }
 
-interface Options { days: number; backfill: string | null }
+interface Options { days: number; backfill: string | null; historical: number }
 
 function parseArgs(): Options {
   const args = process.argv.slice(2);
   let days = 3;
   let backfill: string | null = null;
+  let historical = 0;
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
     if (a.startsWith('--days=')) days = Number(a.slice(7));
     else if (a === '--days' && args[i + 1]) days = Number(args[++i]);
     else if (a.startsWith('--backfill=')) backfill = a.slice(11).toUpperCase();
+    else if (a.startsWith('--historical=')) historical = Number(a.slice(13));
   }
-  return { days, backfill };
+  return { days, backfill, historical };
 }
 
-function insertRecords(records: KapFundDisclosure[]): { inserted: number; skipped: number; insertedRecords: KapFundDisclosure[] } {
+/**
+ * Geçmişe doğru N x 30 günlük pencere yürüyerek tüm kayıtların
+ * publish_date'lerini düzelt (ilk ingest'te fetched_at yazılmıştı).
+ */
+export async function refreshHistorical(windows: number): Promise<{
+  windows: number; inserted: number; updated: number;
+}> {
+  const today = new Date();
+  let totalInserted = 0, totalUpdated = 0;
+
+  for (let i = 0; i < windows; i++) {
+    const end = new Date(today);
+    end.setDate(end.getDate() - i * 30);
+    const start = new Date(end);
+    start.setDate(start.getDate() - 29);
+    const fromDate = toYmd(start);
+    const toDate = toYmd(end);
+
+    try {
+      console.log(`[kap-historical] ${fromDate} → ${toDate}`);
+      const rows = await fetchWindow(fromDate, toDate);
+      const { inserted, updated } = insertRecords(rows);
+      totalInserted += inserted;
+      totalUpdated += updated;
+      console.log(`  +${inserted} yeni, ${updated} güncellendi (toplam ${rows.length})`);
+      await new Promise((r) => setTimeout(r, 1500));
+    } catch (err) {
+      console.warn(`  hata: ${(err as Error).message}`);
+      if ((err as Error).message.includes('rate limit')) break;
+    }
+  }
+  return { windows, inserted: totalInserted, updated: totalUpdated };
+}
+
+function insertRecords(records: KapFundDisclosure[]): { inserted: number; updated: number; insertedRecords: KapFundDisclosure[] } {
   const db = getDb();
-  const stmt = db.prepare(
-    `INSERT OR IGNORE INTO kap_disclosures
+  const existsStmt = db.prepare('SELECT 1 FROM kap_disclosures WHERE disclosure_index = ?');
+  const insertStmt = db.prepare(
+    `INSERT INTO kap_disclosures
      (disclosure_index, fund_code, publish_date, subject, kap_title, rule_type, period, year, attachment_count, summary, fetched_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
+  // UPDATE publish_date + diğer metadata — mevcut kayıtların yanlış tarihleri düzeltilir.
+  // fetched_at dokunulmaz (ilk fetch izini koru).
+  const updateStmt = db.prepare(
+    `UPDATE kap_disclosures SET
+       fund_code = ?, publish_date = ?, subject = ?, kap_title = ?,
+       rule_type = ?, period = ?, year = ?, attachment_count = ?, summary = ?
+     WHERE disclosure_index = ?`,
+  );
   const now = Date.now();
-  let inserted = 0, skipped = 0;
+  let inserted = 0, updated = 0;
   const insertedRecords: KapFundDisclosure[] = [];
   const txn = db.transaction((xs: KapFundDisclosure[]) => {
     for (const d of xs) {
-      const res = stmt.run(
-        d.disclosureIndex,
-        d.fundCode?.toUpperCase() ?? null,
-        parseKapDate(d.publishDate),
-        d.subject ?? null,
-        d.kapTitle ?? null,
-        d.ruleType ?? null,
-        d.period ?? null,
-        d.year ?? null,
-        d.attachmentCount ?? 0,
-        d.summary ?? null,
-        now,
-      );
-      if (res.changes > 0) { inserted++; insertedRecords.push(d); }
-      else skipped++;
+      const idx = d.disclosureIndex;
+      const code = d.fundCode?.toUpperCase() ?? null;
+      const pd = parseKapDate(d.publishDate);
+      const sub = d.subject ?? null;
+      const title = d.kapTitle ?? null;
+      const rt = d.ruleType ?? null;
+      const per = d.period ?? null;
+      const yr = d.year ?? null;
+      const att = d.attachmentCount ?? 0;
+      const sum = d.summary ?? null;
+
+      if (existsStmt.get(idx)) {
+        updateStmt.run(code, pd, sub, title, rt, per, yr, att, sum, idx);
+        updated++;
+      } else {
+        insertStmt.run(idx, code, pd, sub, title, rt, per, yr, att, sum, now);
+        inserted++;
+        insertedRecords.push(d);
+      }
     }
   });
   txn(records);
-  return { inserted, skipped, insertedRecords };
+  return { inserted, updated, insertedRecords };
 }
 
 export async function runKapDisclosuresIngest(overrides?: { days?: number }): Promise<{
-  fetched: number; inserted: number; skipped: number; alertsSent: number;
+  fetched: number; inserted: number; updated: number; alertsSent: number;
 }> {
   const days = overrides?.days ?? parseArgs().days;
   const today = new Date();
@@ -255,13 +320,13 @@ export async function runKapDisclosuresIngest(overrides?: { days?: number }): Pr
   const rows = await fetchWindow(fromDate, toDate);
   console.log(`[kap-disclosures] ${rows.length} fon bildirimi alındı`);
 
-  const { inserted, skipped, insertedRecords } = insertRecords(rows);
-  console.log(`[kap-disclosures] +${inserted} yeni, ${skipped} zaten vardı`);
+  const { inserted, updated, insertedRecords } = insertRecords(rows);
+  console.log(`[kap-disclosures] +${inserted} yeni, ${updated} güncellendi`);
 
   const alertsSent = await notifyKapAlerts(insertedRecords);
   if (alertsSent > 0) console.log(`[kap-disclosures] 📧 ${alertsSent} kullanıcıya bildirim gönderildi`);
 
-  return { fetched: rows.length, inserted, skipped, alertsSent };
+  return { fetched: rows.length, inserted, updated, alertsSent };
 }
 
 /**
@@ -332,7 +397,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const opts = parseArgs();
   const main = opts.backfill
     ? backfillFundKapDisclosures(opts.backfill).then(() => ({ ok: true }))
-    : runKapDisclosuresIngest();
+    : opts.historical > 0
+      ? refreshHistorical(opts.historical).then(() => ({ ok: true }))
+      : runKapDisclosuresIngest();
   main
     .then(() => process.exit(0))
     .catch((err) => {

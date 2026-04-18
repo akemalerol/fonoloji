@@ -129,7 +129,9 @@ export async function estimateFundNav(
   const reportTime = Date.parse(latestHolding.report_date + '-15'); // aylık rapor, orta ay
   if (!Number.isFinite(reportTime)) return null;
   const ageDays = (Date.now() - reportTime) / 86_400_000;
-  if (ageDays > 75) return null;
+  // Çeyreklik raporlayan fonlar için 100 gün (quarter + 10 gün teslim gecikmesi toleransı).
+  // Daha eski olursa hisse listesi fiilen ıskartaya çıkmış sayılır.
+  if (ageDays > 100) return null;
 
   const holdings = db
     .prepare(

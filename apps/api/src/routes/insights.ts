@@ -11,6 +11,11 @@ import type { PricePoint } from '../analytics/returns.js';
 import { getDb } from '../db/index.js';
 import { getMarketDigest, getOrGenerateAiSummary } from '../services/ai.js';
 
+// TEFAS'ta işlem gören fon filtresi — tüm özet/ranking endpoint'lerinde kullanılır.
+// İşlem görmeyen fonlar (kapalı/özel satış) para akışı/en iyi liste gibi genel
+// özetlerde göstermek yanıltıcı.
+const TEFAS_TRADED = `(f.trading_status LIKE '%TEFAS%işlem görüyor%' OR f.trading_status LIKE '%BEFAS%işlem görüyor%')`;
+
 export const insightsRoute: FastifyPluginAsync = async (app) => {
   app.get('/summary/today', async () => {
     const db = getDb();
@@ -56,7 +61,7 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
                 m.current_price, m.return_1m, m.return_3m, m.return_1y, m.return_ytd,
                 m.aum, m.investor_count, m.volatility_90, m.sharpe_90
          FROM funds f JOIN metrics m ON m.code = f.code
-         WHERE f.category = ?
+         WHERE f.category = ? AND ${TEFAS_TRADED}
          ORDER BY m.return_1y DESC NULLS LAST LIMIT 100`,
       )
       .all(decoded);
@@ -109,14 +114,16 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
       .prepare(
         `SELECT f.code, f.name, f.category, m.${col} as flow, m.aum, m.investor_count
          FROM metrics m JOIN funds f ON f.code = m.code
-         WHERE m.${col} IS NOT NULL ORDER BY m.${col} DESC LIMIT ?`,
+         WHERE m.${col} IS NOT NULL AND ${TEFAS_TRADED}
+         ORDER BY m.${col} DESC LIMIT ?`,
       )
       .all(Number(limit));
     const outflow = db
       .prepare(
         `SELECT f.code, f.name, f.category, m.${col} as flow, m.aum, m.investor_count
          FROM metrics m JOIN funds f ON f.code = m.code
-         WHERE m.${col} IS NOT NULL ORDER BY m.${col} ASC LIMIT ?`,
+         WHERE m.${col} IS NOT NULL AND ${TEFAS_TRADED}
+         ORDER BY m.${col} ASC LIMIT ?`,
       )
       .all(Number(limit));
     return { period, inflow, outflow };
@@ -159,7 +166,8 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
          FROM metrics m JOIN funds f ON f.code = m.code
          WHERE m.return_1y IS NOT NULL AND m.volatility_90 IS NOT NULL
            AND m.current_price > 0.001 AND m.return_1y > -0.95 AND m.return_1y < 5.0
-           AND (m.aum IS NULL OR m.aum > 10000 OR m.investor_count > 0)`,
+           AND (m.aum IS NULL OR m.aum > 10000 OR m.investor_count > 0)
+           AND ${TEFAS_TRADED}`,
       )
       .all();
     return { items: rows };
@@ -220,7 +228,8 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
                 m.current_price, m.ma_30, m.ma_90, m.ma_200,
                 m.return_1m, m.aum
          FROM metrics m JOIN funds f ON f.code = m.code
-         WHERE m.current_price IS NOT NULL AND m.ma_30 IS NOT NULL AND m.ma_200 IS NOT NULL`,
+         WHERE m.current_price IS NOT NULL AND m.ma_30 IS NOT NULL AND m.ma_200 IS NOT NULL
+           AND ${TEFAS_TRADED}`,
       )
       .all() as Array<{
         code: string;
@@ -254,7 +263,7 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
                 AVG(m.return_1y) as avg_return_1y,
                 AVG(m.sharpe_90) as avg_sharpe
          FROM funds f LEFT JOIN metrics m ON m.code = f.code
-         WHERE f.management_company IS NOT NULL
+         WHERE f.management_company IS NOT NULL AND ${TEFAS_TRADED}
          GROUP BY f.management_company
          HAVING fund_count >= 2
          ORDER BY total_aum DESC NULLS LAST`,
@@ -278,7 +287,7 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
                 AVG(m.sharpe_90) as avg_sharpe,
                 AVG(m.volatility_90) as avg_volatility
          FROM funds f LEFT JOIN metrics m ON m.code = f.code
-         WHERE f.management_company = ?`,
+         WHERE f.management_company = ? AND ${TEFAS_TRADED}`,
       )
       .get(decoded);
     if (!stats || (stats as { fund_count: number }).fund_count === 0) {
@@ -291,7 +300,7 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
                 m.current_price, m.return_1m, m.return_3m, m.return_1y, m.return_ytd,
                 m.aum, m.investor_count, m.volatility_90, m.sharpe_90
          FROM funds f LEFT JOIN metrics m ON m.code = f.code
-         WHERE f.management_company = ?
+         WHERE f.management_company = ? AND ${TEFAS_TRADED}
          ORDER BY m.aum DESC NULLS LAST LIMIT 200`,
       )
       .all(decoded);
@@ -330,6 +339,7 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
           `SELECT f.code, f.name, f.category, m.sharpe_90 as sharpe, m.return_1y, m.aum
            FROM funds f JOIN metrics m ON m.code = f.code
            WHERE f.category = ? AND m.sharpe_90 IS NOT NULL AND m.return_1y > 0 AND m.aum > 100000000
+             AND ${TEFAS_TRADED}
            ORDER BY m.sharpe_90 DESC LIMIT 1`,
         )
         .get(cat) as { code: string; name: string; category: string; sharpe: number; return_1y: number; aum: number } | undefined;

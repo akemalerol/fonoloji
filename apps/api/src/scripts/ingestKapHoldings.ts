@@ -77,53 +77,58 @@ async function kapFetch<T>(path: string, body?: unknown): Promise<T> {
   }
   args.push(url);
   const { stdout } = await execFileAsync('curl', args, { maxBuffer: 10_000_000 });
-  if (stdout.includes('engellenmistir') || stdout.includes('blocked')) {
-    throw new Error('KAP rate limit — IP engellenmiş, bekleniyor');
+  // Gerçek blok: KAP HTML sayfası döner (JSON değil). Önce JSON parse dene;
+  // olmazsa blok ya da bozuk yanıt. Metin içeriğinde 'engellenmiştir' geçmesi
+  // false positive — finansal raporlarda ('işlemler engellenmiştir' vb.) sık geçen kelime.
+  try {
+    return JSON.parse(stdout) as T;
+  } catch {
+    if (stdout.includes('IP adresiniz') || stdout.includes('Access Denied') || stdout.startsWith('<')) {
+      throw new Error('KAP rate limit — IP engellenmiş, bekleniyor');
+    }
+    throw new Error(`KAP yanıtı parse edilemedi: ${stdout.slice(0, 200)}`);
   }
-  return JSON.parse(stdout) as T;
 }
 
 async function findPortfolioDisclosures(fromDate: string, toDate: string, fundCodes?: string[]): Promise<KapDisclosure[]> {
-  const baseBody = {
-    fromDate,
-    toDate,
-    fundTypeList: [],
-    mkkMemberOidList: [],
-    fundOidList: [],
-    passiveFundOidList: [],
-    isLate: '',
-    subjectList: [],
-    discIndex: [],
-    fromSrc: false,
-    srcCategory: '',
-  };
+  // ÖNCELİK: bizim kap_disclosures tablomuz — 14k bildirim zaten var, KAP'ın
+  // 2000-kayıtlık pagination capini aşıyor. Sadece "Portföy Dağılım Raporu"
+  // subject'i al (BYF, Fon Finansal Rapor UFRS formatı, parser uyumsuz).
+  const db = getDb();
+  const localRows = db
+    .prepare(
+      `SELECT disclosure_index, fund_code, subject, kap_title, rule_type, period, year, attachment_count, publish_date
+       FROM kap_disclosures
+       WHERE subject = 'Portföy Dağılım Raporu'
+         AND publish_date >= (strftime('%s', ?) * 1000)
+         AND publish_date <= (strftime('%s', ?) * 1000) + 86400000
+         AND fund_code IS NOT NULL
+       ORDER BY publish_date DESC`,
+    )
+    .all(fromDate, toDate) as Array<{
+    disclosure_index: number; fund_code: string; subject: string; kap_title: string | null;
+    rule_type: string | null; period: number | null; year: number | null; attachment_count: number; publish_date: number;
+  }>;
 
-  // Search both DG (general disclosures) and FR (financial reports)
-  const [dgResults, frResults] = await Promise.all([
-    kapFetch<KapDisclosure[]>('disclosure/funds/byCriteria', { ...baseBody, disclosureClass: '' }),
-    kapFetch<KapDisclosure[]>('disclosure/funds/byCriteria', { ...baseBody, disclosureClass: 'FR' }),
-  ]);
+  let records: KapDisclosure[] = localRows.map((r) => ({
+    publishDate: new Date(r.publish_date).toISOString(),
+    fundCode: r.fund_code,
+    kapTitle: r.kap_title ?? '',
+    subject: r.subject,
+    disclosureIndex: r.disclosure_index,
+    attachmentCount: r.attachment_count,
+    year: r.year ?? new Date(r.publish_date).getFullYear(),
+    period: r.period ?? 0,
+    ruleType: r.rule_type ?? '',
+  }));
 
-  const PORTFOLIO_SUBJECTS = [
-    'Portföy Dağılım Raporu',
-    'BYF, Fon Finansal Rapor',
-  ];
-
-  const all = [...dgResults, ...frResults];
-  // Deduplicate by disclosureIndex
-  const seen = new Set<number>();
-  const unique = all.filter(d => {
-    if (seen.has(d.disclosureIndex)) return false;
-    seen.add(d.disclosureIndex);
-    return true;
-  });
-
-  let filtered = unique.filter(d => PORTFOLIO_SUBJECTS.includes(d.subject));
   if (fundCodes && fundCodes.length > 0) {
     const set = new Set(fundCodes.map(c => c.toUpperCase()));
-    filtered = filtered.filter(d => set.has(d.fundCode));
+    records = records.filter(d => set.has(d.fundCode));
   }
-  return filtered;
+
+  console.log(`[kap-holdings] Lokal DB'den ${records.length} Portföy Dağılım Raporu bulundu`);
+  return records;
 }
 
 async function getAttachments(disclosureIndex: number): Promise<KapAttachment[]> {
@@ -397,6 +402,22 @@ export async function runKapHoldingsIngest(overrides?: { months?: number; fundCo
       const holdings = parseHoldings(text, disc.fundCode);
       if (holdings.length === 0) {
         console.log(`    ⚠ Holdings parse edilemedi (text ${text.length} char)`);
+        failed++;
+        continue;
+      }
+
+      // SANITY CHECK — fon ağırlıklarının toplamı %80-120 aralığında olmalı.
+      // Parser yanlış sütunu okuduğunda (endeks ağırlığı vs FTD%) toplam 1000+
+      // çıkabiliyor; o zaman holdings bozuk, INSERT yapmayalım.
+      const totalWeight = holdings.reduce((s, h) => s + h.weight, 0);
+      if (totalWeight < 80 || totalWeight > 120) {
+        console.log(`    ⚠ Parser sanity fail — toplam ağırlık %${totalWeight.toFixed(1)} (80-120 arası bekleniyor), reddedildi`);
+        failed++;
+        continue;
+      }
+      const maxSingleWeight = Math.max(...holdings.map(h => h.weight));
+      if (maxSingleWeight > 50) {
+        console.log(`    ⚠ Parser sanity fail — tek hisse %${maxSingleWeight.toFixed(1)} (>50), reddedildi`);
         failed++;
         continue;
       }
