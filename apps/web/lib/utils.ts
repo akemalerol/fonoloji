@@ -11,23 +11,32 @@ const currencyFormatter = new Intl.NumberFormat('tr-TR', {
   maximumFractionDigits: 0,
 });
 
-const compactFormatter = new Intl.NumberFormat('tr-TR', {
-  notation: 'compact',
-  maximumFractionDigits: 1,
-});
-
 const numberFormatter = new Intl.NumberFormat('tr-TR', {
   maximumFractionDigits: 0,
 });
+
+const trNum = (v: number, maxFrac = 1): string =>
+  v.toLocaleString('tr-TR', { maximumFractionDigits: maxFrac });
 
 export function formatCurrency(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return '—';
   return currencyFormatter.format(value);
 }
 
+/**
+ * Türkçe finans kısaltmaları: B (bin), Mn (milyon), Mr (milyar), Tr (trilyon).
+ * Intl tr-TR compact notation'ı "B/Mn/Mr" döndürüyor ama "B" hem "bin" hem
+ * "milyar" anlamına gelebiliyor — karışıklığı önlemek için elle yazıyoruz.
+ */
 export function formatCompact(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return '—';
-  return compactFormatter.format(value).replace('Mn', 'M').replace('B', 'Mr').replace('Mr', 'Mrd');
+  const abs = Math.abs(value);
+  const sign = value < 0 ? '-' : '';
+  if (abs >= 1e12) return `${sign}${trNum(abs / 1e12)} Tr`;
+  if (abs >= 1e9) return `${sign}${trNum(abs / 1e9)} Mr`;
+  if (abs >= 1e6) return `${sign}${trNum(abs / 1e6)} Mn`;
+  if (abs >= 1e3) return `${sign}${trNum(abs / 1e3)} B`;
+  return `${sign}${trNum(abs, 0)}`;
 }
 
 export function formatNumber(value: number | null | undefined): string {

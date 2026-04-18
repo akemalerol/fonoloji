@@ -69,16 +69,32 @@ async function kapPost<T>(path: string, body: unknown): Promise<T> {
   return JSON.parse(stdout) as T;
 }
 
+const CAP_THRESHOLD = 1990;
+// Fon tipleri — KAP her sorguya max 2000 kayıt döner, tip bazlı split cap'i aşar.
+const FUND_TYPES = ['SYF', 'BYF', 'EMK', 'KYF', 'GYF', 'YAT'];
+
 async function fetchWindow(fromDate: string, toDate: string): Promise<KapFundDisclosure[]> {
   const baseBody = {
     fromDate, toDate,
-    fundTypeList: [], mkkMemberOidList: [], fundOidList: [], passiveFundOidList: [],
+    fundTypeList: [] as string[], mkkMemberOidList: [], fundOidList: [], passiveFundOidList: [],
     isLate: '', subjectList: [], discIndex: [], fromSrc: false, srcCategory: '',
   };
-  const [general, financial] = await Promise.all([
-    kapPost<KapFundDisclosure[]>('disclosure/funds/byCriteria', { ...baseBody, disclosureClass: '' }),
-    kapPost<KapFundDisclosure[]>('disclosure/funds/byCriteria', { ...baseBody, disclosureClass: 'FR' }),
-  ]);
+
+  async function fetchClass(cls: string): Promise<KapFundDisclosure[]> {
+    const rows = await kapPost<KapFundDisclosure[]>('disclosure/funds/byCriteria', { ...baseBody, disclosureClass: cls });
+    if (rows.length < CAP_THRESHOLD) return rows;
+    // Cap'e takıldı → fon tipi bazlı split yap; her tip kendi 2000 kotasını kullanır.
+    const perType = await Promise.all(
+      FUND_TYPES.map((ft) =>
+        kapPost<KapFundDisclosure[]>('disclosure/funds/byCriteria', {
+          ...baseBody, disclosureClass: cls, fundTypeList: [ft],
+        }).catch(() => [] as KapFundDisclosure[]),
+      ),
+    );
+    return perType.flat();
+  }
+
+  const [general, financial] = await Promise.all([fetchClass(''), fetchClass('FR')]);
   const all = [...general, ...financial];
   const seen = new Set<number>();
   return all.filter((d) => {
@@ -227,33 +243,42 @@ function parseArgs(): Options {
 }
 
 /**
- * Geçmişe doğru N x 30 günlük pencere yürüyerek tüm kayıtların
- * publish_date'lerini düzelt (ilk ingest'te fetched_at yazılmıştı).
+ * Geçmişe doğru gün gün yürüyerek tüm kayıtların publish_date'lerini düzelt.
+ *
+ * KAP byCriteria endpoint'i pencere başına max 2000 kayıt döner. Yoğun günlerde
+ * (ay başları, portföy rapor yayınları) tek günde 2000+ bildirim olabiliyor —
+ * bu yüzden geniş pencere kayıp yaşatıyor. 3 günlük dar pencere ile güvenli.
+ *
+ * @param totalDays geriye kaç gün gidilecek (örn. 240 → ~8 ay)
  */
-export async function refreshHistorical(windows: number): Promise<{
+export async function refreshHistorical(totalDays: number): Promise<{
   windows: number; inserted: number; updated: number;
 }> {
+  const stepDays = 3;
   const today = new Date();
   let totalInserted = 0, totalUpdated = 0;
+  let windows = 0;
 
-  for (let i = 0; i < windows; i++) {
+  for (let offset = 0; offset < totalDays; offset += stepDays) {
     const end = new Date(today);
-    end.setDate(end.getDate() - i * 30);
+    end.setDate(end.getDate() - offset);
     const start = new Date(end);
-    start.setDate(start.getDate() - 29);
+    start.setDate(start.getDate() - (stepDays - 1));
     const fromDate = toYmd(start);
     const toDate = toYmd(end);
 
     try {
-      console.log(`[kap-historical] ${fromDate} → ${toDate}`);
       const rows = await fetchWindow(fromDate, toDate);
       const { inserted, updated } = insertRecords(rows);
       totalInserted += inserted;
       totalUpdated += updated;
-      console.log(`  +${inserted} yeni, ${updated} güncellendi (toplam ${rows.length})`);
-      await new Promise((r) => setTimeout(r, 1500));
+      windows++;
+      // Yoğun pencereyi izlemek için 2000'e takılanları flag'le
+      const hitCap = rows.length >= 1990 ? ' ⚠ CAP' : '';
+      console.log(`[kap-historical] ${fromDate} → ${toDate}: ${rows.length} bildirim, +${inserted} / ${updated} güncellendi${hitCap}`);
+      await new Promise((r) => setTimeout(r, 800));
     } catch (err) {
-      console.warn(`  hata: ${(err as Error).message}`);
+      console.warn(`  ${fromDate}→${toDate} hata: ${(err as Error).message}`);
       if ((err as Error).message.includes('rate limit')) break;
     }
   }
