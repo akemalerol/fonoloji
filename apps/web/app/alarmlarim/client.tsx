@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, Loader2, Plus, Trash2 } from 'lucide-react';
+import { Bell, FileText, Loader2, Plus, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import * as React from 'react';
 import { cn, formatPrice } from '@/lib/utils';
@@ -25,17 +25,34 @@ const KIND_LABELS: Record<Alert['kind'], string> = {
   return_below: '1A getirisi ≤',
 };
 
+interface KapAlert {
+  id: number;
+  fund_code: string;
+  enabled: number;
+  last_notified_at: number | null;
+  created_at: number;
+  name: string | null;
+}
+
 export function AlertsClient() {
   const [alerts, setAlerts] = React.useState<Alert[]>([]);
+  const [kapAlerts, setKapAlerts] = React.useState<KapAlert[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [addOpen, setAddOpen] = React.useState(false);
 
   async function load() {
     setLoading(true);
-    const res = await fetch('/api/alerts', { credentials: 'include' });
-    if (res.ok) {
-      const d = await res.json();
+    const [priceRes, kapRes] = await Promise.all([
+      fetch('/api/alerts', { credentials: 'include' }),
+      fetch('/api/kap-alerts', { credentials: 'include' }),
+    ]);
+    if (priceRes.ok) {
+      const d = await priceRes.json();
       setAlerts(d.items);
+    }
+    if (kapRes.ok) {
+      const d = await kapRes.json();
+      setKapAlerts((d.items as KapAlert[]).filter((a) => a.enabled === 1));
     }
     setLoading(false);
   }
@@ -47,6 +64,15 @@ export function AlertsClient() {
   async function deleteAlert(id: number) {
     if (!confirm('Bu alarmı sil?')) return;
     await fetch(`/api/alerts/${id}`, { method: 'DELETE', credentials: 'include' });
+    await load();
+  }
+
+  async function deleteKapAlert(code: string) {
+    if (!confirm(`${code} için KAP takibini kapat?`)) return;
+    await fetch(`/api/kap-alerts?code=${encodeURIComponent(code)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
     await load();
   }
 
@@ -62,8 +88,9 @@ export function AlertsClient() {
             Fiyat <span className="display-italic gradient-text">alarmı</span>
           </h1>
           <p className="mt-3 max-w-xl text-sm text-muted-foreground">
-            Belirlediğin koşul gerçekleşince sana e-posta gönderiyoruz.
-            Max 20 aktif alarm. Yatırım tavsiyesi değildir.
+            Fiyat eşiği veya KAP bildirimi — ilgili olay gerçekleşince
+            e-postana düşer. Max 20 fiyat alarmı, 50 KAP takibi. Yatırım
+            tavsiyesi değildir.
           </p>
         </div>
         <button
@@ -145,6 +172,67 @@ export function AlertsClient() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* KAP bildirim takibi — opt-in per fund from /fon/[kod] toggle */}
+      {!loading && (
+        <div className="mt-12">
+          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2 border-b border-border/40 pb-3">
+            <div>
+              <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                <FileText className="h-3 w-3 text-verdigris-400" />
+                KAP bildirim takibi
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Fon sayfasındaki "KAP bildirimlerini e-postayla al" toggle'ı ile eklenir.
+              </p>
+            </div>
+            <span className="font-mono text-xs text-muted-foreground">
+              {kapAlerts.length} aktif
+            </span>
+          </div>
+
+          {kapAlerts.length === 0 ? (
+            <div className="panel p-8 text-center">
+              <FileText className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+              <div className="text-sm">Henüz KAP takibi yok</div>
+              <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground">
+                Bir fonun sayfasını aç → sağ üstteki 🔔 "KAP bildirimlerini e-postayla al"
+                butonuna tıkla. Yeni bildirim yayınlandığında e-posta atarız.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {kapAlerts.map((k) => (
+                <div key={k.id} className="panel flex flex-wrap items-center gap-4 p-4">
+                  <Link
+                    href={`/fon/${k.fund_code}`}
+                    className="inline-flex h-10 w-16 items-center justify-center rounded bg-gradient-to-br from-verdigris-500 to-brand-400 font-mono text-xs font-bold text-background"
+                  >
+                    {k.fund_code}
+                  </Link>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm">{k.name ?? '—'}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      <strong className="text-foreground">Tüm KAP bildirimleri</strong>
+                      {' · '}
+                      {k.last_notified_at
+                        ? `Son mail: ${new Date(k.last_notified_at).toLocaleDateString('tr-TR')}`
+                        : 'Henüz mail gönderilmedi'}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => deleteKapAlert(k.fund_code)}
+                    className="rounded p-1 text-muted-foreground hover:bg-loss/20 hover:text-loss"
+                    title="Takibi kapat"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
