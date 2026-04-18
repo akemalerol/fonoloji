@@ -107,22 +107,41 @@ export async function estimateFundNav(
   db: Database,
   fundCode: string,
 ): Promise<EstimateResult | null> {
-  // Try detailed holdings first (KAP data)
+  // Gate 1: hisse senedi oranı %50+ olmalı — düşük hisseli fonda tahmin yanıltıcı
+  const alloc = db
+    .prepare(
+      `SELECT stock FROM portfolio_snapshots WHERE code = ? ORDER BY date DESC LIMIT 1`,
+    )
+    .get(fundCode) as { stock: number | null } | undefined;
+  if (!alloc || (alloc.stock ?? 0) < 50) return null;
+
+  // Gate 2: KAP portföy raporu en fazla 75 gün eski olmalı — aylık yayımlanıyor,
+  // 2-3 aydan eski ise hisse listesi fiilen yanıltıcı olur
+  const latestHolding = db
+    .prepare(
+      `SELECT report_date FROM fund_holdings
+       WHERE code = ?
+       ORDER BY report_date DESC LIMIT 1`,
+    )
+    .get(fundCode) as { report_date: string } | undefined;
+  if (!latestHolding) return null;
+
+  const reportTime = Date.parse(latestHolding.report_date + '-15'); // aylık rapor, orta ay
+  if (!Number.isFinite(reportTime)) return null;
+  const ageDays = (Date.now() - reportTime) / 86_400_000;
+  if (ageDays > 75) return null;
+
   const holdings = db
     .prepare(
       `SELECT asset_name, asset_code, asset_type, weight, report_date
        FROM fund_holdings
-       WHERE code = ?
-       ORDER BY report_date DESC`,
+       WHERE code = ? AND report_date = ?`,
     )
-    .all(fundCode) as Array<Holding & { report_date: string }>;
+    .all(fundCode, latestHolding.report_date) as Array<Holding & { report_date: string }>;
 
-  if (holdings.length > 0) {
-    return estimateFromHoldings(db, fundCode, holdings);
-  }
+  if (holdings.length === 0) return null;
 
-  // No KAP holdings — no estimate (BIST100 proxy is too inaccurate)
-  return null;
+  return estimateFromHoldings(db, fundCode, holdings);
 }
 
 async function estimateFromHoldings(

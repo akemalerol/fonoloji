@@ -2,6 +2,36 @@ import type { FastifyPluginAsync } from 'fastify';
 import { getDb } from '../db/index.js';
 import { estimateFundNav } from '../services/liveEstimate.js';
 import { backfillFundKapDisclosures } from '../scripts/ingestKapDisclosures.js';
+import { runKapHoldingsIngest } from '../scripts/ingestKapHoldings.js';
+
+// Per-process throttle — fund başına en fazla ayda 1 holdings refresh denenir.
+const holdingsBackfillTried = new Map<string, number>();
+const HOLDINGS_BACKFILL_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
+
+function maybeTriggerHoldingsBackfill(db: ReturnType<typeof getDb>, code: string, log: { warn: (...args: unknown[]) => void }): void {
+  const last = holdingsBackfillTried.get(code);
+  if (last && Date.now() - last < HOLDINGS_BACKFILL_COOLDOWN_MS) return;
+
+  // Sadece hisse ağırlıklı fonlar için — diğerleri için NAV tahmini anlamsız, PDF indirmeye değmez
+  const alloc = db
+    .prepare(`SELECT stock FROM portfolio_snapshots WHERE code = ? ORDER BY date DESC LIMIT 1`)
+    .get(code) as { stock: number | null } | undefined;
+  if (!alloc || (alloc.stock ?? 0) < 50) return;
+
+  const latest = db
+    .prepare(`SELECT MAX(report_date) as d FROM fund_holdings WHERE code = ?`)
+    .get(code) as { d: string | null };
+  const reportTime = latest.d ? Date.parse(latest.d + '-15') : NaN;
+  const ageDays = Number.isFinite(reportTime) ? (Date.now() - reportTime) / 86_400_000 : Infinity;
+  if (ageDays <= 60) return; // yeterince taze
+
+  holdingsBackfillTried.set(code, Date.now());
+  setImmediate(() => {
+    runKapHoldingsIngest({ months: 3, fundCodes: [code] }).catch((err: Error) => {
+      log.warn({ err: err.message, code }, 'holdings backfill hata');
+    });
+  });
+}
 
 export const fundsRoute: FastifyPluginAsync = async (app) => {
   app.get('/funds', async (req) => {
@@ -229,6 +259,9 @@ export const fundsRoute: FastifyPluginAsync = async (app) => {
         });
       });
     }
+
+    // Holdings backfill — hisse ağırlıklı fonun portföy raporu bayatsa arka planda tazele
+    maybeTriggerHoldingsBackfill(db, upper, req.log);
 
     const rows = db
       .prepare(
