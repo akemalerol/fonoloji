@@ -9,11 +9,12 @@ import { CommandMenu } from './command-menu';
 
 const NAV = [
   { href: '/fonlar', label: 'Fonlar' },
+  { href: '/kategori', label: 'Kategoriler' },
   { href: '/kesifler', label: 'Keşifler' },
+  { href: '/arac', label: 'Araçlar' },
   { href: '/ekonomi', label: 'Ekonomi' },
   { href: '/karsilastir', label: 'Karşılaştır' },
   { href: '/api-docs', label: 'API' },
-  { href: '/iletisim', label: 'İletişim' },
 ];
 
 interface Me {

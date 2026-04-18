@@ -1,8 +1,10 @@
+import { Info } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { ChangePill } from '@/components/fx/change-pill';
 import { Badge } from '@/components/ui/badge';
 import { api } from '@/lib/api';
+import { decodeCategory } from '@/lib/decoders';
 import { formatCompact, formatNumber, formatPercent } from '@/lib/utils';
 
 export const revalidate = 60;
@@ -30,13 +32,16 @@ export default async function CategoryPage({ params }: { params: { ad: string } 
 
   const totalAum = data.funds.reduce((s, f) => s + (f.aum ?? 0), 0);
   const totalInvestors = data.funds.reduce((s, f) => s + (f.investor_count ?? 0), 0);
+  const catInfo = decodeCategory(name);
 
   return (
     <div className="container py-10">
       <div className="mb-6">
-        <Link href="/fonlar" className="text-xs text-muted-foreground hover:text-foreground">
-          ← Fonlar
-        </Link>
+        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          <Link href="/kategori" className="hover:text-foreground">Kategoriler</Link>
+          <span>/</span>
+          <Link href="/fonlar" className="hover:text-foreground">Fonlar</Link>
+        </div>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight">{name}</h1>
         <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
           <Badge variant="muted">{data.funds.length} fon</Badge>
@@ -44,6 +49,39 @@ export default async function CategoryPage({ params }: { params: { ad: string } 
           <span>{formatNumber(totalInvestors)} yatırımcı</span>
         </div>
       </div>
+
+      {catInfo && (
+        <div className="panel mb-8 p-5">
+          <div className="flex items-start gap-3">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-brand-400" />
+            <div className="min-w-0 flex-1">
+              <h2 className="text-sm font-semibold text-foreground">Bu kategori nedir?</h2>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{catInfo.short}</p>
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                    Kim için uygun
+                  </div>
+                  <div className="mt-1 text-xs text-foreground/80">{catInfo.who}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                    Risk seviyesi
+                  </div>
+                  <div className={`mt-1 text-xs font-semibold ${
+                    catInfo.risk === 'low' ? 'text-emerald-300' :
+                    catInfo.risk === 'mid' ? 'text-amber-300' :
+                    catInfo.risk === 'high' ? 'text-loss' :
+                    'text-muted-foreground'
+                  }`}>
+                    {catInfo.risk === 'low' ? 'Düşük' : catInfo.risk === 'mid' ? 'Orta' : catInfo.risk === 'high' ? 'Yüksek' : 'Değişken'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-4">
         {periods.map((p) => {
