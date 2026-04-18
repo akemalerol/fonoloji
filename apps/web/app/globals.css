@@ -4,28 +4,50 @@
 
 @layer base {
   :root {
-    /* Warm editorial dark — moves away from purple-cyan AI cliché.
-       Brand: amber/gold (Bloomberg-ish) + verdigris teal accent. */
-    --background: 30 10% 8%;          /* warm charcoal, slight ochre tint */
-    --foreground: 40 30% 96%;         /* warm cream */
+    /* Warm editorial dark — default (matches SSR, pre-JS). */
+    --background: 30 10% 8%;
+    --foreground: 40 30% 96%;
     --card: 30 10% 12%;
     --card-foreground: 40 30% 96%;
     --popover: 30 10% 10%;
     --popover-foreground: 40 30% 96%;
-    --primary: 35 85% 60%;            /* warm amber / gold */
+    --primary: 35 85% 60%;
     --primary-foreground: 30 15% 8%;
     --secondary: 30 8% 18%;
     --secondary-foreground: 40 30% 96%;
     --muted: 30 8% 18%;
     --muted-foreground: 30 10% 70%;
-    --accent: 175 50% 55%;            /* verdigris teal (not cyan) */
+    --accent: 175 50% 55%;
     --accent-foreground: 30 15% 8%;
-    --destructive: 10 65% 55%;        /* warm brick */
+    --destructive: 10 65% 55%;
     --destructive-foreground: 40 30% 96%;
     --border: 30 8% 21%;
     --input: 30 8% 21%;
     --ring: 35 85% 60%;
     --radius: 0.75rem;
+  }
+
+  /* Light mode — html.light ile aktive edilir. Warm ivory + editorial gölgeler. */
+  html.light {
+    --background: 40 30% 97%;          /* warm ivory */
+    --foreground: 30 15% 12%;          /* deep charcoal */
+    --card: 40 25% 99%;
+    --card-foreground: 30 15% 12%;
+    --popover: 40 28% 98%;
+    --popover-foreground: 30 15% 12%;
+    --primary: 30 85% 45%;             /* amber deeper for light bg */
+    --primary-foreground: 40 30% 97%;
+    --secondary: 40 15% 92%;
+    --secondary-foreground: 30 15% 12%;
+    --muted: 40 15% 92%;
+    --muted-foreground: 30 8% 42%;
+    --accent: 175 55% 38%;
+    --accent-foreground: 40 30% 97%;
+    --destructive: 0 70% 45%;
+    --destructive-foreground: 40 30% 97%;
+    --border: 30 10% 85%;
+    --input: 30 10% 88%;
+    --ring: 30 85% 45%;
   }
 }
 
@@ -41,13 +63,15 @@
   body {
     background-color: hsl(var(--background));
     background-image:
-      /* warm amber glow top-left */
       radial-gradient(ellipse 70% 40% at 15% -10%, rgba(245, 158, 11, 0.08), transparent 55%),
-      /* teal glow bottom-right */
       radial-gradient(ellipse 60% 50% at 90% 85%, rgba(45, 212, 191, 0.06), transparent 60%),
-      /* subtle warm wash mid-right */
       radial-gradient(ellipse 50% 40% at 95% 30%, rgba(234, 179, 8, 0.04), transparent 60%);
     background-attachment: fixed;
+  }
+  html.light body {
+    background-image:
+      radial-gradient(ellipse 70% 40% at 15% -10%, rgba(245, 158, 11, 0.12), transparent 55%),
+      radial-gradient(ellipse 60% 50% at 90% 85%, rgba(45, 212, 191, 0.08), transparent 60%);
   }
   .tabular-nums {
     font-variant-numeric: tabular-nums;

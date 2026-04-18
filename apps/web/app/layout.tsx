@@ -114,6 +114,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${sans.variable} ${serif.variable} ${mono.variable} ${GeistSans.className}`}
       suppressHydrationWarning
     >
+      <head>
+        {/* Tema seçimini body render edilmeden uygula — FOUC önleme */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var s=localStorage.getItem('fonoloji-theme');if(s==='light'){document.documentElement.classList.add('light');var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content','#f6efe0');}}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body className="min-h-screen font-sans antialiased selection:bg-brand-500/30">
         <script
           id="ld-org"
