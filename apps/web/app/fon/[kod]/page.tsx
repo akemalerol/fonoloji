@@ -1,5 +1,6 @@
 import { Activity, ArrowRight, Calendar, ExternalLink, Shield, Sparkles, TrendingDown, TrendingUp, Users, Wallet } from 'lucide-react';
 import { KapDisclosuresCard } from './kap-disclosures-card';
+import { PercentileBadges } from './percentile-badges';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChangePill } from '@/components/fx/change-pill';
@@ -69,7 +70,7 @@ export default async function FundDetailPage({
   if (!detail) notFound();
 
   const period = searchParams.period ?? '1y';
-  const [history, monthly, drawdown, timeline, advanced, aiSummary, disclosures] = await Promise.all([
+  const [history, monthly, drawdown, timeline, advanced, aiSummary, disclosures, percentile] = await Promise.all([
     api.getHistory(code, period),
     api.getMonthly(code).catch(() => ({ code, months: [] })),
     api.getDrawdown(code).catch(() => ({ code, points: [] })),
@@ -77,6 +78,7 @@ export default async function FundDetailPage({
     api.advanced(code).catch(() => ({ code, stress_periods: [], seasonality: [], leakage: null, bench_alpha: { '3m': null, '1y': null } })),
     api.aiSummary(code).catch(() => ({ code, summary: null as string | null, cached: false, model: undefined as string | undefined })),
     api.disclosures(code, 50).catch(() => ({ code, items: [] as Array<{ disclosure_index: number; subject: string | null; kap_title: string | null; rule_type: string | null; period: number | null; year: number | null; publish_date: number; attachment_count: number; summary: string | null }>, backfillTriggered: false })),
+    api.percentile(code).catch(() => null),
   ]);
   const points = history.points;
   const firstPrice = points[0]?.price ?? 0;
@@ -470,6 +472,12 @@ export default async function FundDetailPage({
           </div>
         )}
       </div>
+
+      <PercentileBadges
+        code={fund.code}
+        category={fund.category ?? null}
+        initialData={percentile}
+      />
 
       <KapDisclosuresCard
         code={fund.code}

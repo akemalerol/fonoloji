@@ -125,6 +125,78 @@ export const fundsRoute: FastifyPluginAsync = async (app) => {
     return { fund, portfolio };
   });
 
+  app.get('/funds/:code/percentile', async (req, reply) => {
+    const { code } = req.params as { code: string };
+    const db = getDb();
+    const upper = code.toUpperCase();
+    const fund = db
+      .prepare(`SELECT category FROM funds WHERE code = ?`)
+      .get(upper) as { category: string | null } | undefined;
+    if (!fund?.category) return reply.code(404).send({ error: 'Kategori yok' });
+
+    // Kategori içi peerleri — sadece TEFAS-traded, sanity filter'lı
+    const peers = db
+      .prepare(
+        `SELECT m.code, m.sharpe_90, m.return_1y, m.return_3m, m.real_return_1y,
+                m.max_drawdown_1y, m.volatility_90, m.aum
+         FROM funds f JOIN metrics m ON m.code = f.code
+         WHERE f.category = ?
+           AND m.current_price > 0.001
+           AND (f.trading_status LIKE '%TEFAS%işlem görüyor%' OR f.trading_status LIKE '%BEFAS%işlem görüyor%')
+           AND (m.aum IS NULL OR m.aum > 10000 OR m.investor_count > 0)`,
+      )
+      .all(fund.category) as Array<{
+      code: string;
+      sharpe_90: number | null;
+      return_1y: number | null;
+      return_3m: number | null;
+      real_return_1y: number | null;
+      max_drawdown_1y: number | null;
+      volatility_90: number | null;
+      aum: number | null;
+    }>;
+
+    // Her metrik için rank hesapla. null peer'lar yok sayılır.
+    // Drawdown + volatility: daha düşük daha iyi → rank ters.
+    type Metric = 'sharpe_90' | 'return_1y' | 'return_3m' | 'real_return_1y' | 'max_drawdown_1y' | 'volatility_90' | 'aum';
+    const METRICS: Array<{ key: Metric; reverse: boolean }> = [
+      { key: 'sharpe_90', reverse: false },
+      { key: 'return_1y', reverse: false },
+      { key: 'return_3m', reverse: false },
+      { key: 'real_return_1y', reverse: false },
+      { key: 'max_drawdown_1y', reverse: true },   // negatif değerler → en az negatif = iyi
+      { key: 'volatility_90', reverse: true },      // düşük = iyi
+      { key: 'aum', reverse: false },               // büyük = güven sinyali
+    ];
+
+    const result: Record<string, { rank: number; total: number; percentile: number; value: number | null } | null> = {};
+
+    for (const { key, reverse } of METRICS) {
+      const withValue = peers.filter((p) => p[key] !== null && Number.isFinite(p[key] as number));
+      if (withValue.length < 3) {
+        result[key] = null;
+        continue;
+      }
+      const self = withValue.find((p) => p.code === upper);
+      if (!self) { result[key] = null; continue; }
+      const selfVal = self[key] as number;
+
+      const sorted = withValue.slice().sort((a, b) => {
+        const av = a[key] as number;
+        const bv = b[key] as number;
+        return reverse ? av - bv : bv - av; // default: desc (best first)
+      });
+
+      const rank = sorted.findIndex((p) => p.code === upper) + 1;
+      const total = sorted.length;
+      const percentile = Math.round((1 - (rank - 1) / total) * 100);
+
+      result[key] = { rank, total, percentile, value: selfVal };
+    }
+
+    return { code: upper, category: fund.category, categorySize: peers.length, metrics: result };
+  });
+
   app.get('/funds/:code/monthly-returns', async (req) => {
     const { code } = req.params as { code: string };
     const db = getDb();
@@ -274,6 +346,46 @@ export const fundsRoute: FastifyPluginAsync = async (app) => {
       )
       .all(upper, Math.min(Number(limit) || 20, 100));
     return { code: upper, items: rows, backfillTriggered: Boolean(fund && !fund.kap_backfilled_at) };
+  });
+
+  // Haftanın manşet fonları — son N günde en çok KAP bildirimi alan fonlar.
+  // Genel "Aracı Kuruma Ödenen Komisyon" gibi rutin bildirimleri filtreler,
+  // gerçekten ilginç olanları (Portföy, Özel Durum, Genel Açıklama) sayar.
+  app.get('/kap/trending-funds', async (req) => {
+    const { days = '7', limit = '20' } = req.query as Record<string, string>;
+    const db = getDb();
+    const windowMs = Math.min(Math.max(Number(days) || 7, 1), 90) * 86_400_000;
+    const since = Date.now() - windowMs;
+    const INTERESTING_SUBJECTS = [
+      'Portföy Dağılım Raporu',
+      'Genel Açıklama',
+      'Özel Durum',
+      'İzahname',
+      'İzahname (Değişiklik) ',
+      'Şemsiye Fon İç Tüzüğü (Değişiklik)',
+      'Fon Sürekli Bilgilendirme Formu',
+      'Yatırımcı Bilgi Formu',
+      'İhraç Belgesi',
+      'Sorumluluk Beyanı',
+      'BYF, Fon Finansal Rapor',
+    ];
+    const placeholders = INTERESTING_SUBJECTS.map(() => '?').join(',');
+    const rows = db
+      .prepare(
+        `SELECT d.fund_code, f.name, f.category, COUNT(*) as bildirim_sayisi,
+                MAX(d.publish_date) as son_bildirim,
+                GROUP_CONCAT(DISTINCT d.subject) as subjects
+         FROM kap_disclosures d
+         LEFT JOIN funds f ON f.code = d.fund_code
+         WHERE d.publish_date >= ?
+           AND d.fund_code IS NOT NULL
+           AND d.subject IN (${placeholders})
+         GROUP BY d.fund_code
+         ORDER BY bildirim_sayisi DESC, son_bildirim DESC
+         LIMIT ?`,
+      )
+      .all(since, ...INTERESTING_SUBJECTS, Math.min(Number(limit) || 20, 100));
+    return { period_days: Number(days), items: rows };
   });
 
   app.get('/disclosures/recent', async (req) => {

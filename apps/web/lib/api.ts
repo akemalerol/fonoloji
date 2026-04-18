@@ -269,6 +269,25 @@ export const api = {
       stats: CategoryStat[];
       funds: FundRow[];
     }>(`/api/categories/${encodeURIComponent(name)}`),
+  percentile: (code: string) =>
+    fetchJson<{
+      code: string;
+      category: string;
+      categorySize: number;
+      metrics: Record<string, { rank: number; total: number; percentile: number; value: number | null } | null>;
+    }>(`/api/funds/${encodeURIComponent(code)}/percentile`),
+  trendingKap: (days = 7, limit = 30) =>
+    fetchJson<{
+      period_days: number;
+      items: Array<{
+        fund_code: string;
+        name: string | null;
+        category: string | null;
+        bildirim_sayisi: number;
+        son_bildirim: number;
+        subjects: string;
+      }>;
+    }>(`/api/kap/trending-funds?days=${days}&limit=${limit}`),
   disclosures: (code: string, limit = 20) =>
     fetchJson<{
       code: string;
