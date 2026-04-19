@@ -151,6 +151,28 @@ export const fundsRoute: FastifyPluginAsync = async (app) => {
   });
 
   // CSV export — fon listesi (fonlar sayfasıyla aynı filtreleri kabul eder)
+  // Kapanmış fonlar mezarlığı — son 30+ gün TEFAS'ta güncellenmemiş fonlar
+  app.get('/funds/archived', async () => {
+    const db = getDb();
+    const rows = db
+      .prepare(
+        `SELECT f.code, f.name, f.type, f.category, f.management_company, f.isin,
+                f.trading_status, f.first_seen, f.last_seen, f.updated_at,
+                m.current_price, m.aum, m.investor_count, m.return_1y, m.return_all
+         FROM funds f
+         LEFT JOIN metrics m ON m.code = f.code
+         WHERE (
+           f.trading_status IS NULL
+           OR f.trading_status NOT LIKE '%işlem görüyor%'
+           OR (f.last_seen IS NOT NULL AND julianday('now') - julianday(f.last_seen) > 30)
+         )
+         ORDER BY f.last_seen DESC NULLS LAST
+         LIMIT 500`,
+      )
+      .all();
+    return { items: rows };
+  });
+
   app.get('/funds.csv', async (req, reply) => {
     const { q, type, category, sort = 'aum', dir = 'desc', limit = '2000' } =
       req.query as Record<string, string>;

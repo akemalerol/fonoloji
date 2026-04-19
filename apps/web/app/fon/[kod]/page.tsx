@@ -204,6 +204,13 @@ export default async function FundDetailPage({
                 url={`https://fonoloji.com/fon/${fund.code}`}
                 text={`${fund.code} · ${fund.name} — Fonoloji'de analiz`}
               />
+              <a
+                href={`/fon/${fund.code}/rss.xml`}
+                className="inline-flex items-center gap-1 rounded-md border border-border/50 bg-background/40 px-2 py-1 text-[11px] text-muted-foreground transition hover:border-amber-500/40 hover:text-amber-300"
+                title="KAP bildirimleri RSS"
+              >
+                RSS
+              </a>
             </div>
           </div>
         </div>
