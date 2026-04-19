@@ -136,6 +136,17 @@ export function SiteFooter() {
           ))}
         </div>
 
+        {/* Honeypot — insan görmez (tabindex=-1 + visually hidden), scraper linkleri topladığında tıklar → 403 + IP log. */}
+        <a
+          href="/_hp/trap"
+          tabIndex={-1}
+          aria-hidden="true"
+          style={{ position: 'absolute', left: '-9999px', width: '1px', height: '1px', overflow: 'hidden' }}
+          rel="nofollow noindex"
+        >
+          data
+        </a>
+
         <div className="mt-12 flex flex-col gap-3 border-t border-border/60 pt-6 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
             <span>

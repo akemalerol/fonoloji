@@ -26,6 +26,16 @@ const nextConfig = {
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          // AI/scraper caydırıcı işaretler. Google, Bing bunlara saygı duyar;
+          // scraper'ları engellemez ama yasal argüman + politika sinyalidir.
+          { key: 'X-Robots-Tag', value: 'noarchive, noimageindex' },
+        ],
+      },
+      // Fon veri sayfaları — scraper için en değerli hedef. Ekstra sinyaller.
+      {
+        source: '/fon/:path*',
+        headers: [
+          { key: 'X-Robots-Tag', value: 'noarchive, noimageindex, nosnippet, max-snippet:160' },
         ],
       },
       {
