@@ -63,7 +63,7 @@ export default async function EconomyPage() {
             data.tuik.gov.tr
           </a>
         </p>
-        <div className="mt-5">
+        <div className="mt-5 flex flex-wrap gap-2">
           <Link
             href="/ekonomi/piyasalar"
             className="group inline-flex items-center gap-2 rounded-full border border-border bg-card/50 px-4 py-2 text-xs backdrop-blur transition-colors hover:border-brand-500/50 hover:bg-card"
@@ -73,6 +73,20 @@ export default async function EconomyPage() {
               <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
             </span>
             Canlı piyasalar dashboard'u
+            <ArrowUpRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+          </Link>
+          <Link
+            href="/ekonomi/kap-mansetleri"
+            className="group inline-flex items-center gap-2 rounded-full border border-border bg-card/50 px-4 py-2 text-xs backdrop-blur transition-colors hover:border-amber-500/50 hover:bg-card"
+          >
+            🔥 Haftanın KAP manşetleri
+            <ArrowUpRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+          </Link>
+          <Link
+            href={`/en-iyi-fonlar/${new Date().getFullYear()}`}
+            className="group inline-flex items-center gap-2 rounded-full border border-border bg-card/50 px-4 py-2 text-xs backdrop-blur transition-colors hover:border-amber-500/50 hover:bg-card"
+          >
+            🏆 Yılın en iyi fonları
             <ArrowUpRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
           </Link>
         </div>

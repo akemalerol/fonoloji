@@ -109,14 +109,28 @@ export default async function FundsPage({
             )}
           </p>
         </div>
-        <a
-          href="/api/funds.csv?limit=2000"
-          download
-          className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-background/40 px-3 py-1.5 text-xs text-muted-foreground transition hover:border-brand-500/40 hover:text-foreground"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3 w-3"><path d="M12 3v12m0 0l-4-4m4 4l4-4M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2" /></svg>
-          CSV indir
-        </a>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/fonlar/yeni"
+            className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-background/40 px-3 py-1.5 text-xs text-muted-foreground transition hover:border-emerald-500/40 hover:text-emerald-300"
+          >
+            ✨ Yeni listelenenler
+          </Link>
+          <Link
+            href="/arsiv/fonlar"
+            className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-background/40 px-3 py-1.5 text-xs text-muted-foreground transition hover:border-muted-foreground hover:text-foreground"
+          >
+            Arşiv
+          </Link>
+          <a
+            href="/api/funds.csv?limit=2000"
+            download
+            className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-background/40 px-3 py-1.5 text-xs text-muted-foreground transition hover:border-brand-500/40 hover:text-foreground"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3 w-3"><path d="M12 3v12m0 0l-4-4m4 4l4-4M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2" /></svg>
+            CSV indir
+          </a>
+        </div>
       </div>
 
       {/* Akıllı seçiciler — preset chip'leri */}

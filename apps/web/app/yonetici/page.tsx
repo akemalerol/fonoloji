@@ -41,6 +41,14 @@ export default async function ManagementCompaniesPage() {
           {items.length} portföy yönetim şirketi · fon büyüklüğüne göre sıralı · ortalama 1 yıllık getiri ve
           Sharpe oranıyla
         </p>
+        <div className="mt-4">
+          <Link
+            href="/yonetici-karsilastir"
+            className="inline-flex items-center gap-1.5 rounded-full border border-brand-500/30 bg-brand-500/10 px-3 py-1.5 text-xs text-brand-200 transition hover:bg-brand-500/15"
+          >
+            👑 Şirketleri yan yana karşılaştır
+          </Link>
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-border bg-card/40">
