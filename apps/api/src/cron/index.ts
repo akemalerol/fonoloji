@@ -13,7 +13,7 @@ import { runKapHoldingsIngest } from '../scripts/ingestKapHoldings.js';
 import { runKapDisclosuresIngest } from '../scripts/ingestKapDisclosures.js';
 import { runEstimates, verifyEstimates } from '../scripts/navEstimateDaily.js';
 import { runPortfolioIngest } from '../scripts/ingestPortfolio.js';
-import { runAlertChecker, runFundChangeDetector, runWatchlistDigest, runWeeklyDigest } from './alerts.js';
+import { runAlertChecker, runFundChangeDetector, runPeriodSummary, runWatchlistDigest, runWeeklyDigest } from './alerts.js';
 
 export function registerCron(log: { info: (msg: string) => void; error: (...args: unknown[]) => void }): void {
   if (process.env.FONOLOJI_DISABLE_CRON === '1') {
@@ -206,6 +206,23 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
       log.error('[cron] haftalık özet hata:', err);
     }
   }, { timezone: 'Europe/Istanbul' });
+
+  // Dönemsel özet (çeyreklik + yıllık). Altyapı hazır, aşağıdaki iki cron
+  // ihtiyaca göre açılır. Şimdilik DISABLED — runPeriodSummary manuel tetiklenebilir:
+  //   npx tsx -e "import('./src/cron/alerts.js').then(m => m.runPeriodSummary('2026 1. Çeyrek', Date.parse('2026-01-01'), Date.parse('2026-03-31')))"
+  //
+  // Çeyreklik (her Mar 31, Haz 30, Eyl 30, Ara 31 @ 10:00):
+  //   cron.schedule('0 10 31 3,12 *', () => runPeriodSummary('Bu çeyrek', ...))
+  //   cron.schedule('0 10 30 6,9 *', () => runPeriodSummary('Bu çeyrek', ...))
+  //
+  // Yıllık (31 Aralık 18:00):
+  //   cron.schedule('0 18 31 12 *', async () => {
+  //     const year = new Date().getFullYear();
+  //     const from = Date.parse(`${year}-01-01`);
+  //     const to = Date.parse(`${year}-12-31T23:59:59`);
+  //     const r = await runPeriodSummary(`${year}`, from, to);
+  //     log.info(`[cron] yıl sonu özeti: ${r.sent} sent / ${r.skipped} skip`);
+  //   }, { timezone: 'Europe/Istanbul' });
 
   // Fund change detector — once daily at 12:30 TR (after last ingest)
   cron.schedule('30 12 * * *', async () => {

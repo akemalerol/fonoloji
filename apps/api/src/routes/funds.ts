@@ -151,6 +151,26 @@ export const fundsRoute: FastifyPluginAsync = async (app) => {
   });
 
   // CSV export — fon listesi (fonlar sayfasıyla aynı filtreleri kabul eder)
+  // Yeni listelenen fonlar — son 30 gün içinde ilk kez gözlenen (first_seen'e göre)
+  app.get('/funds/new', async (req) => {
+    const { days = '30', limit = '50' } = req.query as Record<string, string>;
+    const db = getDb();
+    const rows = db
+      .prepare(
+        `SELECT f.code, f.name, f.type, f.category, f.management_company, f.first_seen,
+                m.current_price, m.return_1m, m.aum
+         FROM funds f
+         LEFT JOIN metrics m ON m.code = f.code
+         WHERE f.first_seen IS NOT NULL
+           AND julianday('now') - julianday(f.first_seen) <= ?
+           AND (f.trading_status LIKE '%işlem görüyor%' OR f.trading_status IS NULL)
+         ORDER BY f.first_seen DESC
+         LIMIT ?`,
+      )
+      .all(Number(days) || 30, Math.min(Number(limit) || 50, 200));
+    return { items: rows };
+  });
+
   // Kapanmış fonlar mezarlığı — son 30+ gün TEFAS'ta güncellenmemiş fonlar
   app.get('/funds/archived', async () => {
     const db = getDb();

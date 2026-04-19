@@ -419,6 +419,221 @@ async function sendWatchlistDigestFor(user: { id: number; email: string; name: s
   }
 }
 
+// ============================================================================
+// YIL SONU / ÇEYREK ÖZET — "Spotify Wrapped" tarzı dönemsel brifing (#47).
+// Altyapı: kullanıcının dönem içindeki aktivitesini aggregate eder, mail hazır.
+// Trigger: manuel veya çeyreklik cron (şimdilik DISABLED — aşağıdaki index.ts'e yorum olarak).
+// ============================================================================
+
+export interface PeriodSummary {
+  userId: number;
+  fromMs: number;
+  toMs: number;
+  newWatchlist: number;
+  newAlerts: number;
+  newKapAlerts: number;
+  alarmsFired: number;
+  kapAlertsFired: number;
+  portfolioValue: number | null;
+  portfolioPnl: number | null;
+  portfolioPnlPct: number | null;
+  topWatchedFund: { code: string; name: string | null; return_1y: number | null } | null;
+  kapHeavyFund: { code: string; name: string | null; count: number } | null;
+  totalFundsViewed: number; // placeholder — client tracking yok, 0
+}
+
+export function buildPeriodSummary(userId: number, fromMs: number, toMs: number): PeriodSummary {
+  const db = getDb();
+
+  const newWatchlist = (db
+    .prepare(`SELECT COUNT(*) as c FROM watchlist WHERE user_id = ? AND created_at BETWEEN ? AND ?`)
+    .get(userId, fromMs, toMs) as { c: number }).c;
+
+  const newAlerts = (db
+    .prepare(`SELECT COUNT(*) as c FROM price_alerts WHERE user_id = ? AND created_at BETWEEN ? AND ?`)
+    .get(userId, fromMs, toMs) as { c: number }).c;
+
+  const newKapAlerts = (db
+    .prepare(`SELECT COUNT(*) as c FROM kap_alerts WHERE user_id = ? AND created_at BETWEEN ? AND ?`)
+    .get(userId, fromMs, toMs) as { c: number }).c;
+
+  const alarmsFired = (db
+    .prepare(`SELECT COUNT(*) as c FROM price_alerts WHERE user_id = ? AND triggered_at BETWEEN ? AND ?`)
+    .get(userId, fromMs, toMs) as { c: number }).c;
+
+  const kapAlertsFired = (db
+    .prepare(`SELECT COUNT(*) as c FROM kap_alerts WHERE user_id = ? AND last_notified_at BETWEEN ? AND ?`)
+    .get(userId, fromMs, toMs) as { c: number }).c;
+
+  // En iyi performansta olan (izlenen) fon
+  const topWatched = db
+    .prepare(
+      `SELECT w.fund_code, f.name, m.return_1y
+       FROM watchlist w LEFT JOIN funds f ON f.code = w.fund_code
+       LEFT JOIN metrics m ON m.code = w.fund_code
+       WHERE w.user_id = ? AND m.return_1y IS NOT NULL
+       ORDER BY m.return_1y DESC LIMIT 1`,
+    )
+    .get(userId) as { fund_code: string; name: string | null; return_1y: number } | undefined;
+
+  // İzlenen fon içinde dönem içinde en çok KAP bildirimi alan
+  const kapHeavy = db
+    .prepare(
+      `SELECT w.fund_code, f.name,
+              (SELECT COUNT(*) FROM kap_disclosures d
+               WHERE d.fund_code = w.fund_code AND d.publish_date BETWEEN ? AND ?) as count
+       FROM watchlist w LEFT JOIN funds f ON f.code = w.fund_code
+       WHERE w.user_id = ?
+       ORDER BY count DESC LIMIT 1`,
+    )
+    .get(fromMs, toMs, userId) as { fund_code: string; name: string | null; count: number } | undefined;
+
+  // Portföy P&L
+  const pf = db
+    .prepare(`SELECT id FROM virtual_portfolios WHERE user_id = ?`)
+    .get(userId) as { id: number } | undefined;
+
+  let portfolioValue: number | null = null;
+  let portfolioPnl: number | null = null;
+  let portfolioPnlPct: number | null = null;
+
+  if (pf) {
+    const holdings = db
+      .prepare(
+        `SELECT h.units, h.cost_basis_try, m.current_price
+         FROM portfolio_holdings h LEFT JOIN metrics m ON m.code = h.code
+         WHERE h.portfolio_id = ?`,
+      )
+      .all(pf.id) as Array<{ units: number; cost_basis_try: number; current_price: number | null }>;
+    if (holdings.length > 0) {
+      const cost = holdings.reduce((s, h) => s + h.cost_basis_try, 0);
+      const val = holdings.reduce((s, h) => s + (h.current_price ? h.units * h.current_price : 0), 0);
+      portfolioValue = val;
+      portfolioPnl = val - cost;
+      portfolioPnlPct = cost > 0 ? (val - cost) / cost : null;
+    }
+  }
+
+  return {
+    userId,
+    fromMs,
+    toMs,
+    newWatchlist,
+    newAlerts,
+    newKapAlerts,
+    alarmsFired,
+    kapAlertsFired,
+    portfolioValue,
+    portfolioPnl,
+    portfolioPnlPct,
+    topWatchedFund: topWatched ? { code: topWatched.fund_code, name: topWatched.name, return_1y: topWatched.return_1y } : null,
+    kapHeavyFund: kapHeavy ? { code: kapHeavy.fund_code, name: kapHeavy.name, count: kapHeavy.count } : null,
+    totalFundsViewed: 0, // client-side tracking yok
+  };
+}
+
+async function sendPeriodSummaryFor(
+  user: { id: number; email: string; name: string | null },
+  summary: PeriodSummary,
+  label: string,
+): Promise<boolean> {
+  const resend = getResend();
+  if (!resend) return false;
+
+  const firstName = (user.name ?? user.email.split('@')[0] ?? '').split(' ')[0];
+
+  const statsHtml = [
+    { label: `${label} içinde izleme listesine eklediğin`, value: summary.newWatchlist, unit: 'fon' },
+    { label: 'Kurduğun fiyat alarmı', value: summary.newAlerts, unit: 'adet' },
+    { label: 'Tetiklenen alarm', value: summary.alarmsFired, unit: 'kez' },
+    { label: 'Gelen KAP uyarısı', value: summary.kapAlertsFired, unit: 'mail' },
+  ]
+    .filter((s) => s.value > 0)
+    .map((s) => `<tr>
+      <td style="padding:10px 12px;border-bottom:1px solid #24242b;color:#a8a8b3;font-size:12px;">${s.label}</td>
+      <td style="padding:10px 12px;text-align:right;border-bottom:1px solid #24242b;color:#f5f5f7;font-family:monospace;font-weight:600;">${s.value} ${s.unit}</td>
+    </tr>`)
+    .join('');
+
+  const topLine = summary.topWatchedFund && summary.topWatchedFund.return_1y !== null
+    ? `En iyi gidenin <strong style="color:#10B981;font-family:monospace;">${summary.topWatchedFund.code}</strong> oldu — 1Y getirisi <strong style="color:#10B981;">+${(summary.topWatchedFund.return_1y * 100).toFixed(1)}%</strong>.`
+    : '';
+
+  const kapLine = summary.kapHeavyFund && summary.kapHeavyFund.count > 0
+    ? `<strong style="font-family:monospace;">${summary.kapHeavyFund.code}</strong> ${summary.kapHeavyFund.count} KAP bildirimiyle en hareketli fonundu.`
+    : '';
+
+  const pfLine = summary.portfolioPnlPct !== null
+    ? `Sanal portföyün ${label} içinde <strong style="color:${summary.portfolioPnlPct >= 0 ? '#10B981' : '#F43F5E'};">${summary.portfolioPnlPct >= 0 ? '+' : ''}${(summary.portfolioPnlPct * 100).toFixed(1)}%</strong> değişti.`
+    : '';
+
+  const html = `<!DOCTYPE html>
+<html lang="tr"><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#0b0b10;font-family:-apple-system,sans-serif;color:#e8e8ec;">
+<table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;"><tr><td align="center">
+<table width="620" cellpadding="0" cellspacing="0" style="max-width:620px;background:#15151b;border:1px solid #24242b;border-radius:20px;overflow:hidden;">
+<tr><td style="background:linear-gradient(135deg,#F59E0B 0%,#2DD4BF 100%);height:4px;"></td></tr>
+<tr><td style="padding:32px;">
+  <div style="font-size:10px;font-weight:700;color:#F59E0B;text-transform:uppercase;letter-spacing:3px;margin-bottom:12px;">${label.toUpperCase()} ÖZETİN</div>
+  <h2 style="margin:0 0 20px;font-size:26px;color:#f5f5f7;font-family:Georgia,serif;font-weight:400;">${firstName}, ${label.toLowerCase()} senin için şöyle geçti:</h2>
+
+  ${statsHtml ? `<table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0f16;border-radius:12px;margin-bottom:20px;">${statsHtml}</table>` : ''}
+
+  ${topLine || kapLine || pfLine ? `
+    <p style="margin:20px 0;font-size:14px;color:#a8a8b3;line-height:1.7;">
+      ${[topLine, kapLine, pfLine].filter(Boolean).join(' ')}
+    </p>` : ''}
+
+  <p style="margin:24px 0 0;font-size:12px;color:#61616c;">
+    <a href="${SITE}/alarmlarim" style="color:#a8a8b3;">Alarmlarım</a> ·
+    <a href="${SITE}/fonlar" style="color:#a8a8b3;">Fonlar</a> ·
+    <a href="${SITE}/panel" style="color:#a8a8b3;">Aboneliği yönet</a>
+  </p>
+</td></tr>
+</table>
+</td></tr></table>
+</body></html>`;
+
+  try {
+    await resend.emails.send({
+      from: FROM,
+      to: user.email,
+      subject: `${label} Fonoloji özetin`,
+      html,
+    });
+    return true;
+  } catch { return false; }
+}
+
+export async function runPeriodSummary(label: string, fromMs: number, toMs: number): Promise<{ sent: number; skipped: number }> {
+  const db = getDb();
+  const users = db
+    .prepare(
+      `SELECT u.id, u.email, u.name FROM users u
+       WHERE u.disabled_at IS NULL AND u.email_verified_at IS NOT NULL
+         AND EXISTS (
+           SELECT 1 FROM watchlist w WHERE w.user_id = u.id
+           UNION SELECT 1 FROM price_alerts a WHERE a.user_id = u.id
+           UNION SELECT 1 FROM virtual_portfolios p WHERE p.user_id = u.id
+         )`,
+    )
+    .all() as Array<{ id: number; email: string; name: string | null }>;
+
+  let sent = 0, skipped = 0;
+  for (const u of users) {
+    const summary = buildPeriodSummary(u.id, fromMs, toMs);
+    // Hiç aktivitesi yoksa atla
+    if (
+      summary.newWatchlist === 0 && summary.newAlerts === 0 && summary.alarmsFired === 0 &&
+      summary.kapAlertsFired === 0 && summary.portfolioValue === null
+    ) { skipped++; continue; }
+    const ok = await sendPeriodSummaryFor(u, summary, label);
+    if (ok) sent++; else skipped++;
+    await new Promise((r) => setTimeout(r, 800));
+  }
+  return { sent, skipped };
+}
+
 export async function runWatchlistDigest(): Promise<{ sent: number; skipped: number }> {
   const db = getDb();
   const subs = db

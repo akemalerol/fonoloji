@@ -1,5 +1,6 @@
 import { ArrowUpRight, Facebook, Instagram, Mail } from 'lucide-react';
 import Link from 'next/link';
+import { StreakBadge } from './streak-badge';
 
 function XIcon({ className }: { className?: string }) {
   return (
@@ -124,9 +125,11 @@ export function SiteFooter() {
         </div>
 
         <div className="mt-12 flex flex-col gap-3 border-t border-border/60 pt-6 md:flex-row md:items-center md:justify-between">
-          <div className="text-[11px] text-muted-foreground">
-            © {new Date().getFullYear()} Fonoloji · Kaynak: tefas.gov.tr (public) · Tüm rakamlar
-            bilgilendirme amaçlıdır.
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+            <span>
+              © {new Date().getFullYear()} Fonoloji · Kaynak: tefas.gov.tr (public) · Tüm rakamlar bilgilendirme amaçlıdır.
+            </span>
+            <StreakBadge />
           </div>
           <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
             <a href="https://x.com/fonoloji_" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:text-foreground">
