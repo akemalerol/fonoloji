@@ -2,6 +2,7 @@ import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import jwt from '@fastify/jwt';
+import rateLimit from '@fastify/rate-limit';
 import Fastify from 'fastify';
 import { registerCron } from './cron/index.js';
 import { getDb } from './db/index.js';
@@ -80,9 +81,25 @@ await app.register(jwt, {
   secret: jwtSecret ?? 'fonoloji-dev-jwt-secret-change-me',
 });
 
-// Internal /api/* (no auth — used by Next.js server-side rendering on same host).
+// Internal /api/* (cookie auth opsiyonel — Next.js SSR ve tarayıcı çağrıları).
+// Scraping'i kısıtlamak için IP başına rate-limit. Programatik erişim için /v1/*.
 await app.register(
   async (inner) => {
+    await inner.register(rateLimit, {
+      max: 60,
+      timeWindow: '1 minute',
+      keyGenerator: (req) =>
+        (req.headers['cf-connecting-ip'] as string) ||
+        (req.headers['x-real-ip'] as string) ||
+        ((req.headers['x-forwarded-for'] as string) ?? '').split(',')[0]?.trim() ||
+        req.ip,
+      errorResponseBuilder: () => ({
+        statusCode: 429,
+        error: 'Too Many Requests',
+        message:
+          'Dakikada 60 istek sınırını aştın. Programatik erişim için ücretsiz API anahtarı al: https://fonoloji.com/api-docs',
+      }),
+    });
     await inner.register(fundsRoute);
     await inner.register(insightsRoute);
     await inner.register(contactRoute);

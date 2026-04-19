@@ -103,7 +103,7 @@ export const fundsRoute: FastifyPluginAsync = async (app) => {
          ORDER BY ${orderBy}
          LIMIT ?`,
       )
-      .all(...params, Number(limit));
+      .all(...params, Math.min(Math.max(Number(limit) || 200, 1), 500));
     return { items: rows };
   });
 
@@ -194,7 +194,7 @@ export const fundsRoute: FastifyPluginAsync = async (app) => {
   });
 
   app.get('/funds.csv', async (req, reply) => {
-    const { q, type, category, sort = 'aum', dir = 'desc', limit = '2000' } =
+    const { q, type, category, sort = 'aum', dir = 'desc', limit = '500' } =
       req.query as Record<string, string>;
     const db = getDb();
     const where: string[] = [];
@@ -227,7 +227,7 @@ export const fundsRoute: FastifyPluginAsync = async (app) => {
          ORDER BY ${col} ${direction} NULLS LAST
          LIMIT ?`,
       )
-      .all(...params, Math.min(Number(limit) || 2000, 5000)) as Array<Record<string, unknown>>;
+      .all(...params, Math.min(Math.max(Number(limit) || 500, 1), 500)) as Array<Record<string, unknown>>;
 
     const header = [
       'kod','ad','tip','kategori','yonetim_sirketi','isin','risk_skoru','durum',

@@ -95,14 +95,14 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
          FROM metrics m JOIN funds f ON f.code = m.code
          WHERE ${SANITY_CLAUSE} ORDER BY m.${col} DESC LIMIT ?`,
       )
-      .all(Number(limit));
+      .all(Math.min(Math.max(Number(limit) || 20, 1), 100));
     const losers = db
       .prepare(
         `SELECT f.code, f.name, f.category, m.${col} as change, m.aum
          FROM metrics m JOIN funds f ON f.code = m.code
          WHERE ${SANITY_CLAUSE} ORDER BY m.${col} ASC LIMIT ?`,
       )
-      .all(Number(limit));
+      .all(Math.min(Math.max(Number(limit) || 20, 1), 100));
     return { period, gainers, losers };
   });
 
@@ -117,7 +117,7 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
          WHERE m.${col} IS NOT NULL AND ${TEFAS_TRADED}
          ORDER BY m.${col} DESC LIMIT ?`,
       )
-      .all(Number(limit));
+      .all(Math.min(Math.max(Number(limit) || 20, 1), 100));
     const outflow = db
       .prepare(
         `SELECT f.code, f.name, f.category, m.${col} as flow, m.aum, m.investor_count
@@ -125,7 +125,7 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
          WHERE m.${col} IS NOT NULL AND ${TEFAS_TRADED}
          ORDER BY m.${col} ASC LIMIT ?`,
       )
-      .all(Number(limit));
+      .all(Math.min(Math.max(Number(limit) || 20, 1), 100));
     return { period, inflow, outflow };
   });
 

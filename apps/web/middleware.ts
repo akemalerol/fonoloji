@@ -115,8 +115,12 @@ export function middleware(req: NextRequest) {
     );
   }
 
-  // 4. Rate limit — sadece fon veri sayfaları
-  const isDataPath = path.startsWith('/fon/') || path.startsWith('/fonlar') || path.startsWith('/kategori');
+  // 4. Rate limit — fon veri sayfaları + proxy'lenen /api/* (backend'de de ayrı limit var)
+  const isDataPath =
+    path.startsWith('/fon/') ||
+    path.startsWith('/fonlar') ||
+    path.startsWith('/kategori') ||
+    path.startsWith('/api/');
   if (isDataPath && rateLimited(ip)) {
     return new NextResponse(
       JSON.stringify({
@@ -136,9 +140,11 @@ export function middleware(req: NextRequest) {
   return NextResponse.next();
 }
 
-// Middleware'in çalışacağı path'ler — static asset ve api'yi dışarıda bırak
+// Middleware'in çalışacağı path'ler — static asset, admin/auth/v1/embed'i dışarıda bırak.
+// /api/* DAHİL: UA blocklist ve honeypot bu yollarda da çalışsın (scraping kapısı).
+// /v1/* API-key ile authed, kendi rate-limit'i var — middleware'den muaf.
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|api/|admin-api/|auth/|v1/|embed/|.*\\.(?:xml|txt|png|jpg|svg|ico|webp|avif|css|js|woff|woff2)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|admin-api/|auth/|v1/|embed/|.*\\.(?:xml|txt|png|jpg|svg|ico|webp|avif|css|js|woff|woff2)$).*)',
   ],
 };
