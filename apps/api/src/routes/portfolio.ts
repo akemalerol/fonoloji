@@ -165,13 +165,13 @@ export const portfolioRoute: FastifyPluginAsync = async (app) => {
     const db = getDb();
     const rows = db
       .prepare(
-        `SELECT w.id, w.fund_code, w.created_at, f.name, f.category, f.risk_score,
+        `SELECT w.id, w.fund_code, w.folder, w.created_at, f.name, f.category, f.risk_score,
                 m.current_price, m.return_1m, m.return_1y, m.return_ytd, m.aum, m.sharpe_90
          FROM watchlist w
          LEFT JOIN funds f ON f.code = w.fund_code
          LEFT JOIN metrics m ON m.code = w.fund_code
          WHERE w.user_id = ?
-         ORDER BY w.created_at DESC`,
+         ORDER BY w.folder IS NULL, w.folder, w.created_at DESC`,
       )
       .all(user.id);
     return { items: rows };
@@ -191,6 +191,19 @@ export const portfolioRoute: FastifyPluginAsync = async (app) => {
 
   const watchlistSchema = z.object({
     code: z.string().min(2).max(8).transform((s) => s.toUpperCase()),
+    folder: z.string().max(40).nullable().optional(),
+  });
+
+  app.patch('/watchlist', async (req, reply) => {
+    const user = await requireUser(req, reply);
+    if (!user) return;
+    const body = (req.body ?? {}) as { code?: string; folder?: string | null };
+    if (!body.code) return reply.code(400).send({ error: 'code gerekli' });
+    const db = getDb();
+    const result = db
+      .prepare(`UPDATE watchlist SET folder = ? WHERE user_id = ? AND fund_code = ?`)
+      .run(body.folder ?? null, user.id, body.code.toUpperCase());
+    return reply.code(result.changes > 0 ? 200 : 404).send({ ok: result.changes > 0 });
   });
 
   app.post('/watchlist', async (req, reply) => {

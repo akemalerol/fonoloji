@@ -411,6 +411,8 @@ const ADDITIONAL_COLUMNS: Array<{ table: string; column: string; type: string }>
   { table: 'users', column: 'limit_note', type: 'TEXT' },
   // KAP bildirimleri: fon bazında son "derin backfill" zamanı (null = henüz backfill edilmemiş)
   { table: 'funds', column: 'kap_backfilled_at', type: 'INTEGER' },
+  // Watchlist klasör/grup — null = "Genel"
+  { table: 'watchlist', column: 'folder', type: 'TEXT' },
 ];
 
 export function applySchema(db: Database): void {

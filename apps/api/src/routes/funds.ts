@@ -150,6 +150,73 @@ export const fundsRoute: FastifyPluginAsync = async (app) => {
     return overlap;
   });
 
+  // CSV export — fon listesi (fonlar sayfasıyla aynı filtreleri kabul eder)
+  app.get('/funds.csv', async (req, reply) => {
+    const { q, type, category, sort = 'aum', dir = 'desc', limit = '2000' } =
+      req.query as Record<string, string>;
+    const db = getDb();
+    const where: string[] = [];
+    const params: unknown[] = [];
+    if (q) { where.push(`(f.code LIKE ? OR f.name LIKE ?)`); params.push(`%${q.toUpperCase()}%`, `%${q}%`); }
+    if (type) { where.push(`f.type = ?`); params.push(type); }
+    if (category) { where.push(`f.category = ?`); params.push(category); }
+
+    const sortCol: Record<string, string> = {
+      aum: 'm.aum', return_1d: 'm.return_1d', return_1w: 'm.return_1w',
+      return_1m: 'm.return_1m', return_3m: 'm.return_3m', return_1y: 'm.return_1y',
+      return_ytd: 'm.return_ytd', volatility: 'm.volatility_90', sharpe: 'm.sharpe_90',
+      risk: 'f.risk_score', name: 'f.name',
+    };
+    const col = sortCol[sort] ?? 'm.aum';
+    const direction = dir === 'asc' ? 'ASC' : 'DESC';
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+    const rows = db
+      .prepare(
+        `SELECT f.code, f.name, f.type, f.category, f.management_company,
+                f.isin, f.risk_score, f.trading_status,
+                m.current_price, m.current_date, m.return_1d, m.return_1w, m.return_1m,
+                m.return_3m, m.return_6m, m.return_1y, m.return_ytd, m.real_return_1y,
+                m.volatility_90, m.sharpe_90, m.sortino_90, m.max_drawdown_1y,
+                m.aum, m.investor_count, m.flow_1m
+         FROM funds f
+         LEFT JOIN metrics m ON m.code = f.code
+         ${whereSql}
+         ORDER BY ${col} ${direction} NULLS LAST
+         LIMIT ?`,
+      )
+      .all(...params, Math.min(Number(limit) || 2000, 5000)) as Array<Record<string, unknown>>;
+
+    const header = [
+      'kod','ad','tip','kategori','yonetim_sirketi','isin','risk_skoru','durum',
+      'fiyat','fiyat_tarihi','getiri_1g','getiri_1h','getiri_1a','getiri_3a','getiri_6a',
+      'getiri_1y','getiri_ybi','reel_getiri_1y','volatilite_90','sharpe_90','sortino_90',
+      'max_drawdown_1y','aum','yatirimci','akis_1a',
+    ];
+    const escape = (v: unknown): string => {
+      if (v === null || v === undefined) return '';
+      const s = String(v);
+      if (/[,"\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    };
+    const csv = [
+      header.join(','),
+      ...rows.map((r) => [
+        r.code, r.name, r.type, r.category, r.management_company, r.isin, r.risk_score, r.trading_status,
+        r.current_price, r.current_date, r.return_1d, r.return_1w, r.return_1m, r.return_3m, r.return_6m,
+        r.return_1y, r.return_ytd, r.real_return_1y, r.volatility_90, r.sharpe_90, r.sortino_90,
+        r.max_drawdown_1y, r.aum, r.investor_count, r.flow_1m,
+      ].map(escape).join(',')),
+    ].join('\n');
+
+    const ts = new Date().toISOString().slice(0, 10);
+    reply
+      .header('Content-Type', 'text/csv; charset=utf-8')
+      .header('Content-Disposition', `attachment; filename="fonoloji-fonlar-${ts}.csv"`);
+    // BOM — Excel Türkçe karakter için
+    return '\uFEFF' + csv;
+  });
+
   app.get('/funds/:code/percentile', async (req, reply) => {
     const { code } = req.params as { code: string };
     const db = getDb();
@@ -288,6 +355,45 @@ export const fundsRoute: FastifyPluginAsync = async (app) => {
       )
       .all(code, `-${Number(days)} day`);
     return { code, points: rows };
+  });
+
+  // Fon + benchmark karşılaştırma serisi — normalize edilmiş getiri (başlangıç=100)
+  // Benchmarks: BIST100 (live_market'ten), TÜFE (cpi_tr), USD/TRY (live_market)
+  app.get('/funds/:code/vs-benchmark', async (req) => {
+    const { code } = req.params as { code: string };
+    const { period = '1y' } = req.query as Record<string, string>;
+    const db = getDb();
+    const days = { '1w': 7, '1m': 31, '3m': 93, '6m': 186, '1y': 365, '5y': 365 * 5, all: undefined }[period];
+    const sql = days
+      ? `SELECT date, price FROM prices WHERE code = ? AND date >= date('now', '-${days} day') ORDER BY date ASC`
+      : `SELECT date, price FROM prices WHERE code = ? ORDER BY date ASC`;
+    const fundRows = db.prepare(sql).all(code.toUpperCase()) as Array<{ date: string; price: number }>;
+    if (fundRows.length < 2) return { code, period, points: [] };
+
+    const firstDate = fundRows[0]!.date;
+    const lastDate = fundRows[fundRows.length - 1]!.date;
+
+    // Fund normalize
+    const fundFirst = fundRows[0]!.price || 1;
+    const fundSeries = fundRows.map((r) => ({ date: r.date, value: (r.price / fundFirst) * 100 }));
+
+    // CPI (TÜFE) — aylık
+    const cpiRows = db
+      .prepare(
+        `SELECT date, index_value FROM cpi_tr
+         WHERE date >= ? AND date <= ?
+         ORDER BY date ASC`,
+      )
+      .all(firstDate, lastDate) as Array<{ date: string; index_value: number }>;
+    const cpiFirst = cpiRows[0]?.index_value ?? 1;
+    const cpiSeries = cpiRows.map((r) => ({ date: r.date, value: (r.index_value / cpiFirst) * 100 }));
+
+    return {
+      code,
+      period,
+      fund: fundSeries,
+      cpi: cpiSeries,
+    };
   });
 
   app.get('/funds/:code/history', async (req, reply) => {
