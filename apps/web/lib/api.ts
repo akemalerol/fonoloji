@@ -271,6 +271,17 @@ export const api = {
       stats: CategoryStat[];
       funds: FundRow[];
     }>(`/api/categories/${encodeURIComponent(name)}`),
+  managementCompanies: () =>
+    fetchJson<{
+      items: Array<{
+        name: string;
+        fund_count: number;
+        total_aum: number;
+        total_investors: number;
+        avg_return_1y: number;
+        avg_sharpe: number | null;
+      }>;
+    }>(`/api/management-companies`),
   exposureHeatmap: () =>
     fetchJson<{
       items: Array<{
