@@ -6,6 +6,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { CommandMenu } from './command-menu';
+import { KeyboardShortcuts } from './keyboard-shortcuts';
+import { RecentlyViewedDropdown } from './recently-viewed';
 import { ThemeToggle } from './theme-toggle';
 
 const NAV = [
@@ -104,6 +106,7 @@ export function SiteHeader() {
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
+            <RecentlyViewedDropdown />
             <ThemeToggle />
             <button
               onClick={() => setOpen(true)}
@@ -190,6 +193,7 @@ export function SiteHeader() {
         </div>
       </header>
       <CommandMenu open={open} onOpenChange={setOpen} />
+      <KeyboardShortcuts />
     </>
   );
 }

@@ -7,6 +7,7 @@ import { PortfolioDonut, type PortfolioSlice } from '@/components/fx/portfolio-d
 import { Badge } from '@/components/ui/badge';
 import { api } from '@/lib/api';
 import { cn, formatCompact, formatNumber, formatPercent, formatPrice, fundTypeLabel } from '@/lib/utils';
+import { ShareButton } from '@/components/site/share-button';
 import { CompareHeader } from './header';
 
 export const revalidate = 60;
@@ -69,9 +70,16 @@ export default async function ComparePage({
 
   const series = valid.map((v) => ({ code: v.detail.fund.code, points: v.history.points }));
 
+  const codesJoined = valid.map((v) => v.detail.fund.code).join(',');
+  const shareUrl = `https://fonoloji.com/karsilastir?kodlar=${codesJoined}`;
+  const shareText = `${valid.map((v) => v.detail.fund.code).join(' vs ')} — Fonoloji karşılaştırması`;
+
   return (
     <div className="container py-10">
-      <CompareHeader codes={valid.map((v) => v.detail.fund.code)} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <CompareHeader codes={valid.map((v) => v.detail.fund.code)} />
+        <ShareButton url={shareUrl} text={shareText} label="Karşılaştırmayı paylaş" />
+      </div>
 
       {/* Summary strip — quick stats */}
       <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-4">

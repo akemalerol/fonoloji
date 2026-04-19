@@ -95,6 +95,8 @@ export interface FundDetail {
 export interface PricePoint {
   date: string;
   price: number;
+  total_value?: number | null;
+  investor_count?: number | null;
 }
 
 export interface Mover {

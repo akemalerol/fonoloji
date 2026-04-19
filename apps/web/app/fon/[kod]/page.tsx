@@ -1,8 +1,11 @@
 import { Activity, ArrowRight, Calendar, ExternalLink, Shield, Sparkles, TrendingDown, TrendingUp, Users, Wallet } from 'lucide-react';
+import { ShareButton } from '@/components/site/share-button';
+import { RecordRecentFund } from '@/components/site/recently-viewed';
 import { KapDisclosuresCard } from './kap-disclosures-card';
 import { PercentileBadges } from './percentile-badges';
 import { SocialProof } from './social-proof';
 import { WatchlistToggle } from './watchlist-toggle';
+import { InvestorTrend } from './investor-trend';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChangePill } from '@/components/fx/change-pill';
@@ -197,6 +200,10 @@ export default async function FundDetailPage({
               >
                 Fact Sheet
               </Link>
+              <ShareButton
+                url={`https://fonoloji.com/fon/${fund.code}`}
+                text={`${fund.code} · ${fund.name} — Fonoloji'de analiz`}
+              />
             </div>
           </div>
         </div>
@@ -485,6 +492,10 @@ export default async function FundDetailPage({
           </div>
         )}
       </div>
+
+      <RecordRecentFund code={fund.code} name={fund.name} />
+
+      <InvestorTrend code={fund.code} />
 
       <PercentileBadges
         code={fund.code}
