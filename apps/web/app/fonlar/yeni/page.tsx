@@ -101,7 +101,7 @@ export default async function YeniFonlarPage({ searchParams }: { searchParams: {
               <div className="hidden items-center gap-6 text-right md:flex">
                 {f.aum !== null && (
                   <div>
-                    <div className="text-[10px] text-muted-foreground/70">AUM</div>
+                    <div className="text-[10px] text-muted-foreground/70">Büyüklük</div>
                     <div className="font-mono text-sm tabular-nums">{formatCompact(f.aum)}</div>
                   </div>
                 )}

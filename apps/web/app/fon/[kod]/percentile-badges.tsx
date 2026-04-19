@@ -2,7 +2,7 @@
 
 import { Trophy } from 'lucide-react';
 import * as React from 'react';
-import { cn } from '@/lib/utils';
+import { cn, formatCompact } from '@/lib/utils';
 
 interface Bucket {
   rank: number;
@@ -17,7 +17,7 @@ const METRICS: Array<{ key: string; label: string; fmt: (v: number) => string }>
   { key: 'real_return_1y', label: 'Reel 1Y', fmt: (v) => `%${(v * 100).toFixed(1)}` },
   { key: 'max_drawdown_1y', label: 'Max DD', fmt: (v) => `%${(v * 100).toFixed(1)}` },
   { key: 'volatility_90', label: 'Volatilite', fmt: (v) => `%${(v * 100).toFixed(1)}` },
-  { key: 'aum', label: 'AUM', fmt: (v) => v >= 1e9 ? `${(v / 1e9).toFixed(1)} Mr` : `${(v / 1e6).toFixed(0)} Mn` },
+  { key: 'aum', label: 'Fon büyüklüğü', fmt: (v) => formatCompact(v) },
 ];
 
 function colorFor(pct: number): { text: string; bg: string; border: string; label: string } {

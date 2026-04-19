@@ -61,7 +61,7 @@ export default async function ArsivPage() {
         </h1>
         <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
           TEFAS'ta eskiden işlem gören, şu an listede olmayan veya 30+ gündür
-          güncellenmeyen fonlar. Tarihsel kayıt — son gözlenen fiyat, AUM, getiri
+          güncellenmeyen fonlar. Tarihsel kayıt — son gözlenen fiyat, fon büyüklüğü, getiri
           ve işlem durumu. Birçoğu birleşmiş, tasfiye edilmiş veya isim değiştirmiş.
         </p>
       </div>
@@ -91,7 +91,7 @@ export default async function ArsivPage() {
               </div>
               <div className="hidden items-center gap-6 text-right md:flex">
                 <div>
-                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70">Son AUM</div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70">Son büyüklük</div>
                   <div className="font-mono text-sm tabular-nums">{f.aum ? formatCompact(f.aum) : '—'}</div>
                 </div>
                 <div>

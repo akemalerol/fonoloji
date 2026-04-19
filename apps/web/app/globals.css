@@ -27,27 +27,27 @@
     --radius: 0.75rem;
   }
 
-  /* Light mode — html.light ile aktive edilir. Warm ivory + editorial gölgeler. */
+  /* Light mode — Japanese-editorial + warm paper. Kontrast yüksek, gözü yormaz. */
   html.light {
-    --background: 40 30% 97%;          /* warm ivory */
-    --foreground: 30 15% 12%;          /* deep charcoal */
-    --card: 40 25% 99%;
-    --card-foreground: 30 15% 12%;
-    --popover: 40 28% 98%;
-    --popover-foreground: 30 15% 12%;
-    --primary: 30 85% 45%;             /* amber deeper for light bg */
-    --primary-foreground: 40 30% 97%;
-    --secondary: 40 15% 92%;
-    --secondary-foreground: 30 15% 12%;
-    --muted: 40 15% 92%;
-    --muted-foreground: 30 8% 42%;
-    --accent: 175 55% 38%;
-    --accent-foreground: 40 30% 97%;
-    --destructive: 0 70% 45%;
-    --destructive-foreground: 40 30% 97%;
-    --border: 30 10% 85%;
-    --input: 30 10% 88%;
-    --ring: 30 85% 45%;
+    --background: 42 38% 98%;          /* warmer ivory (neredeyse kağıt) */
+    --foreground: 25 20% 10%;          /* near-black, ılık ton */
+    --card: 0 0% 100%;                 /* saf beyaz panel - zemine karşı belirgin */
+    --card-foreground: 25 20% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 25 20% 10%;
+    --primary: 28 80% 42%;             /* daha koyu amber (wcag) */
+    --primary-foreground: 42 38% 98%;
+    --secondary: 40 18% 90%;           /* açık krem */
+    --secondary-foreground: 25 20% 10%;
+    --muted: 40 15% 94%;
+    --muted-foreground: 25 15% 35%;    /* daha koyu kontrast */
+    --accent: 175 60% 30%;             /* koyu verdigris */
+    --accent-foreground: 42 38% 98%;
+    --destructive: 0 72% 42%;
+    --destructive-foreground: 42 38% 98%;
+    --border: 30 12% 82%;              /* biraz daha görünür */
+    --input: 30 12% 88%;
+    --ring: 28 80% 42%;
   }
 }
 
@@ -70,8 +70,26 @@
   }
   html.light body {
     background-image:
-      radial-gradient(ellipse 70% 40% at 15% -10%, rgba(245, 158, 11, 0.12), transparent 55%),
-      radial-gradient(ellipse 60% 50% at 90% 85%, rgba(45, 212, 191, 0.08), transparent 60%);
+      /* yumuşak amber top-left */
+      radial-gradient(ellipse 60% 35% at 10% -5%, rgba(245, 158, 11, 0.10), transparent 50%),
+      /* yumuşak verdigris bottom-right */
+      radial-gradient(ellipse 55% 40% at 95% 95%, rgba(13, 148, 136, 0.06), transparent 55%);
+  }
+
+  /* Light mode seçim rengi — amber üstü okunur */
+  html.light ::selection {
+    background: rgba(251, 146, 60, 0.35);
+    color: hsl(25 20% 10%);
+  }
+
+  /* Light mode scrollbar — warm tone */
+  html.light ::-webkit-scrollbar-thumb {
+    background: rgba(180, 83, 9, 0.25);
+    background-clip: padding-box;
+  }
+  html.light ::-webkit-scrollbar-thumb:hover {
+    background: rgba(180, 83, 9, 0.5);
+    background-clip: padding-box;
   }
   .tabular-nums {
     font-variant-numeric: tabular-nums;
@@ -129,6 +147,14 @@
       0 1px 0 0 rgba(0, 0, 0, 0.2),
       0 8px 24px -12px rgba(0, 0, 0, 0.35);
   }
+  /* Light mode — panel daha görünür, yumuşak gölge + belirgin border */
+  html.light .panel {
+    @apply border-border/70 bg-card;
+    box-shadow:
+      0 1px 0 0 rgba(0, 0, 0, 0.02),
+      0 4px 10px -2px rgba(30, 20, 10, 0.06),
+      0 10px 24px -8px rgba(30, 20, 10, 0.08);
+  }
   .panel-highlight {
     @apply rounded-2xl border border-brand-500/30 bg-gradient-to-br from-brand-500/10 via-card/60 to-card/40 backdrop-blur-xl;
     box-shadow:
@@ -166,6 +192,27 @@
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+  }
+  /* Light mode'da açık zemine gri-sarı okunmaz — daha doygun tonlar */
+  html.light .gradient-text {
+    background: linear-gradient(135deg, #B45309 0%, #D97706 40%, #0F766E 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+  html.light .gradient-text-warm {
+    background: linear-gradient(135deg, #B45309 0%, #D97706 50%, #92400E 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+  html.light .aurora {
+    background-image:
+      radial-gradient(ellipse 60% 100% at 0% 100%, rgba(180, 83, 9, 0.12), transparent 70%),
+      radial-gradient(ellipse 80% 100% at 100% 0%, rgba(15, 118, 110, 0.10), transparent 65%);
+  }
+  html.light .panel-highlight {
+    box-shadow:
+      0 4px 10px -2px rgba(180, 83, 9, 0.08),
+      0 10px 24px -8px rgba(180, 83, 9, 0.12);
   }
   .serif {
     font-family: var(--font-serif), Georgia, serif;

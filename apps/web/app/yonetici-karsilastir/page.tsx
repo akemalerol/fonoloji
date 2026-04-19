@@ -9,7 +9,7 @@ export const revalidate = 300;
 export const metadata = {
   title: 'Yönetim şirketi karşılaştır — İş Portföy, Ak Portföy, Garanti BBVA Portföy',
   description:
-    'Türkiye\'nin en büyük portföy yönetim şirketlerini yan yana koy — fon sayısı, AUM, ortalama Sharpe, 1Y getiri. İş Portföy, Ak Portföy, Garanti BBVA Portföy ve daha fazlası.',
+    'Türkiye\'nin en büyük portföy yönetim şirketlerini yan yana koy — fon sayısı, Büyüklük, ortalama Sharpe, 1Y getiri. İş Portföy, Ak Portföy, Garanti BBVA Portföy ve daha fazlası.',
 };
 
 export default async function YoneticiKarsilastirPage({
@@ -27,7 +27,7 @@ export default async function YoneticiKarsilastirPage({
     avg_sharpe: number | null;
   }>;
 
-  // Default — top 6 by AUM
+  // Default — top 6 by Büyüklük
   const defaults = list.slice(0, 6).map((c) => c.name);
   const selected = searchParams.adlar
     ? searchParams.adlar.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 10)
@@ -56,7 +56,7 @@ export default async function YoneticiKarsilastirPage({
         </h1>
         <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
           Türkiye'nin en büyük portföy yönetim şirketlerinin karnesi:
-          fon sayısı, toplam AUM, yatırımcı, ortalama 1Y getiri ve Sharpe.
+          fon sayısı, toplam Büyüklük, yatırımcı, ortalama 1Y getiri ve Sharpe.
           {searchParams.adlar
             ? ' Seçtiğin şirketler karşılaştırılıyor.'
             : ' Varsayılan olarak en büyük 6 şirket gösteriliyor.'}
@@ -69,7 +69,7 @@ export default async function YoneticiKarsilastirPage({
             <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
               <th className="sticky left-0 bg-card px-4 py-3 text-left">Şirket</th>
               <th className="px-3 py-3 text-right">Fon</th>
-              <th className="px-3 py-3 text-right">AUM</th>
+              <th className="px-3 py-3 text-right">Büyüklük</th>
               <th className="px-3 py-3 text-right">Yatırımcı</th>
               <th className="px-3 py-3 text-right">1Y ort.</th>
               <th className="px-3 py-3 text-right">Sharpe ort.</th>

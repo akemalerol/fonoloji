@@ -81,7 +81,7 @@ export default async function KategoriIndexPage() {
                   </div>
                 </div>
                 <div>
-                  <div className="text-[9px] uppercase tracking-wider text-muted-foreground/70">AUM</div>
+                  <div className="text-[9px] uppercase tracking-wider text-muted-foreground/70">Büyüklük</div>
                   <div className="font-mono tabular-nums">
                     {cat.total_aum ? formatCompact(cat.total_aum) : '—'}
                   </div>

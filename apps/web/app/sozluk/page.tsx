@@ -1,27 +1,33 @@
 import { Book } from 'lucide-react';
-import { EXPLAINERS } from '@/components/fx/explainer';
+import Link from 'next/link';
+import { GLOSSARY, GLOSSARY_CATEGORIES, type GlossaryEntry } from '@/lib/glossary';
 
 export const metadata = {
   title: 'Finansal terimler sözlüğü — Fonoloji',
   description:
-    'Sharpe, Sortino, drawdown, volatilite, reel getiri, AUM, korelasyon… TEFAS fon yatırımcısının bilmesi gereken tüm finansal terimler örneklerle.',
+    'TEFAS fon yatırımcısının bilmesi gereken 40+ finansal terim: Sharpe, Sortino, drawdown, volatilite, beta, alfa, korelasyon, DCA, KAP, valör, stopaj, reel getiri ve dahası. Sade Türkçe, örneklerle.',
 };
 
-const TITLE_OVERRIDES: Record<string, string> = {
-  drawdown: 'Drawdown — Max Düşüş',
-  aum: 'AUM — Fon Büyüklüğü',
-  sharpe: 'Sharpe Oranı',
-  sortino: 'Sortino Oranı',
-  volatility: 'Volatilite',
-  real_return: 'Reel Getiri',
-  correlation: 'Korelasyon',
-  beta: 'Beta Katsayısı',
-  calmar: 'Calmar Oranı',
-  investor_count: 'Yatırımcı Sayısı',
-};
+function renderBody(paragraphs: string[]): React.ReactNode {
+  return paragraphs.map((p, i) => (
+    <p key={i} dangerouslySetInnerHTML={{
+      __html: p
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/\n/g, '<br/>'),
+    }} />
+  ));
+}
+
+function grouped() {
+  const out: Record<GlossaryEntry['category'], GlossaryEntry[]> = {
+    getiri: [], risk: [], 'risk-ayarli': [], portfoy: [], 'fon-turu': [], 'tefas-kap': [], piyasa: [], maliyet: [],
+  };
+  for (const e of GLOSSARY) out[e.category].push(e);
+  return out;
+}
 
 export default function SozlukPage() {
-  const entries = Object.entries(EXPLAINERS).sort(([a], [b]) => a.localeCompare(b, 'tr'));
+  const sections = grouped();
 
   return (
     <div className="container py-10 md:py-14">
@@ -33,41 +39,88 @@ export default function SozlukPage() {
           Finansal <span className="display-italic gradient-text">terimler</span>
         </h1>
         <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
-          TEFAS fonlarını değerlendirmek için bilmen gereken temel kavramlar —
-          Sharpe, drawdown, reel getiri, volatilite, korelasyon. Her biri
-          sade dille + örneklerle.
+          TEFAS fonlarını değerlendirirken karşına çıkacak <strong className="text-foreground">{GLOSSARY.length} terim</strong> — kategorilere ayrılmış,
+          her biri sade Türkçe, örnekli. Fon sayfalarındaki <span className="font-mono">?</span> tooltip'lerine
+          buradan derin açıklamaya ulaşılır.
         </p>
       </div>
 
-      <nav className="mb-8 flex flex-wrap gap-2">
-        {entries.map(([key]) => (
-          <a
-            key={key}
-            href={`#${key}`}
-            className="rounded-full border border-border/50 bg-background/40 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-muted-foreground hover:border-brand-500/40 hover:text-foreground"
-          >
-            {TITLE_OVERRIDES[key] ?? key}
-          </a>
-        ))}
+      {/* Kategori navigasyonu */}
+      <nav className="sticky top-16 z-20 -mx-4 mb-8 border-b border-border/40 bg-background/90 px-4 py-3 backdrop-blur">
+        <div className="flex flex-wrap gap-2">
+          {GLOSSARY_CATEGORIES.map((c) => {
+            const count = sections[c.key]?.length ?? 0;
+            return (
+              <a
+                key={c.key}
+                href={`#${c.key}`}
+                className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-background/40 px-3 py-1 text-[11px] text-muted-foreground transition hover:border-brand-500/40 hover:text-foreground"
+              >
+                {c.label}
+                <span className="font-mono tabular-nums opacity-60">{count}</span>
+              </a>
+            );
+          })}
+        </div>
       </nav>
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-        {entries.map(([key, data]) => (
-          <article
-            key={key}
-            id={key}
-            className="panel scroll-mt-20 p-6"
-          >
-            <h2 className="serif text-2xl leading-tight">{data.title}</h2>
-            <div className="mt-3 space-y-3 text-sm leading-relaxed text-muted-foreground">
-              {data.body}
+      {/* İçerik — kategoriye göre bölümlenmiş */}
+      {GLOSSARY_CATEGORIES.map((cat) => {
+        const entries = sections[cat.key];
+        if (!entries || entries.length === 0) return null;
+        return (
+          <section key={cat.key} id={cat.key} className="mb-14 scroll-mt-28">
+            <h2 className="serif display-italic mb-5 text-3xl text-brand-300">
+              {cat.label}
+            </h2>
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+              {entries.map((e) => (
+                <article key={e.slug} id={e.slug} className="panel scroll-mt-28 p-6">
+                  <h3 className="serif text-xl leading-tight">{e.title}</h3>
+                  <p className="mt-2 text-sm italic text-brand-300/80">{e.short}</p>
+                  <div className="mt-4 space-y-3 text-sm leading-relaxed text-muted-foreground">
+                    {renderBody(e.body)}
+                  </div>
+                  {e.example && (
+                    <div className="mt-4 rounded-lg border border-verdigris-500/25 bg-verdigris-500/5 p-3 text-xs leading-relaxed">
+                      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-verdigris-400">Örnek</div>
+                      <div
+                        className="text-foreground/85"
+                        dangerouslySetInnerHTML={{
+                          __html: e.example.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br/>'),
+                        }}
+                      />
+                    </div>
+                  )}
+                  {e.related && e.related.length > 0 && (
+                    <div className="mt-4 flex flex-wrap gap-1.5 border-t border-border/40 pt-3">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                        İlgili:
+                      </span>
+                      {e.related.map((r) => {
+                        const target = GLOSSARY.find((x) => x.slug === r);
+                        if (!target) return null;
+                        return (
+                          <a
+                            key={r}
+                            href={`#${r}`}
+                            className="rounded-full border border-border/50 bg-background/40 px-2 py-0.5 text-[10px] text-muted-foreground hover:border-brand-500/40 hover:text-foreground"
+                          >
+                            {target.title}
+                          </a>
+                        );
+                      })}
+                    </div>
+                  )}
+                </article>
+              ))}
             </div>
-          </article>
-        ))}
-      </div>
+          </section>
+        );
+      })}
 
-      <p className="mt-16 text-center text-xs text-muted-foreground">
-        Fon sayfalarında ilgili metriklerin yanındaki <span className="font-mono">?</span> ikonuyla da erişilir
+      <p className="mt-16 border-t border-border/40 pt-6 text-center text-xs text-muted-foreground">
+        Eksik terim var mı? <Link href="/iletisim" className="text-brand-400 hover:text-brand-300">bize yaz</Link> — ekleriz.
       </p>
     </div>
   );

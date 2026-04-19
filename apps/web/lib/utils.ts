@@ -24,18 +24,18 @@ export function formatCurrency(value: number | null | undefined): string {
 }
 
 /**
- * Türkçe finans kısaltmaları: B (bin), Mn (milyon), Mr (milyar), Tr (trilyon).
- * Intl tr-TR compact notation'ı "B/Mn/Mr" döndürüyor ama "B" hem "bin" hem
- * "milyar" anlamına gelebiliyor — karışıklığı önlemek için elle yazıyoruz.
+ * Türkçe finans birimleri — tam isimleri yazar (kısaltma değil).
+ * Örnek: 1.500 → "1,5 bin", 1.500.000 → "1,5 milyon",
+ *        1.500.000.000 → "1,5 milyar", 1.500.000.000.000 → "1,5 trilyon".
  */
 export function formatCompact(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return '—';
   const abs = Math.abs(value);
   const sign = value < 0 ? '-' : '';
-  if (abs >= 1e12) return `${sign}${trNum(abs / 1e12)} Tr`;
-  if (abs >= 1e9) return `${sign}${trNum(abs / 1e9)} Mr`;
-  if (abs >= 1e6) return `${sign}${trNum(abs / 1e6)} Mn`;
-  if (abs >= 1e3) return `${sign}${trNum(abs / 1e3)} B`;
+  if (abs >= 1e12) return `${sign}${trNum(abs / 1e12)} trilyon`;
+  if (abs >= 1e9) return `${sign}${trNum(abs / 1e9)} milyar`;
+  if (abs >= 1e6) return `${sign}${trNum(abs / 1e6)} milyon`;
+  if (abs >= 1e3) return `${sign}${trNum(abs / 1e3)} bin`;
   return `${sign}${trNum(abs, 0)}`;
 }
 

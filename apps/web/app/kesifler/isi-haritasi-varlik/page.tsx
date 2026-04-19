@@ -83,7 +83,7 @@ export default async function IsiHaritasiVarlikPage() {
               <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 <th className="sticky left-0 bg-background pb-3 pr-4 text-left">Kategori</th>
                 <th className="pb-3 pr-3 text-right">Fon</th>
-                <th className="pb-3 pr-3 text-right">AUM</th>
+                <th className="pb-3 pr-3 text-right">Büyüklük</th>
                 {COLS.map((c) => (
                   <th key={c.key} className="pb-3 text-center">{c.label}</th>
                 ))}
