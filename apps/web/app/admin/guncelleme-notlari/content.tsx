@@ -1,11 +1,5 @@
-import { Activity, Award, BarChart3, Bell, CheckCircle2, Code, Database, Eye, FileText, Printer, TrendingUp, Users, Zap } from 'lucide-react';
+import { Activity, Award, BarChart3, Bell, CheckCircle2, Code, Database, Eye, FileText, TrendingUp, Users, Zap } from 'lucide-react';
 import { PrintButton } from './print-button';
-
-export const metadata = {
-  title: 'Günlük Geliştirme Raporu — Fonoloji',
-  description: 'Bugün eklenen özelliklerin yönetici özeti',
-  robots: { index: false, follow: false },
-};
 
 interface Feature {
   icon: React.ReactNode;
@@ -256,7 +250,7 @@ const METRICS = [
   { label: 'Yeni API endpoint', value: '14' },
 ];
 
-export default function BugunRaporPage() {
+export function DevReportContent() {
   const byGroup = GROUPS.map((g) => ({
     ...g,
     items: FEATURES.filter((f) => f.category === g.key),

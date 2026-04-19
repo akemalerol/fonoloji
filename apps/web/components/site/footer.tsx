@@ -48,6 +48,7 @@ const SECTIONS = [
     title: 'Referans',
     items: [
       { href: '/sozluk', label: 'Finansal Sözlük' },
+      { href: '/yenilikler', label: 'Yenilikler' },
       { href: '/yonetici', label: 'Yönetim Şirketleri' },
       { href: '/yonetici-karsilastir', label: 'Şirket Karşılaştır' },
       { href: '/api-docs', label: 'API Dokümanı' },

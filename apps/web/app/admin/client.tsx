@@ -201,9 +201,17 @@ export function AdminClient({
             {me.user.name ?? me.user.email} · yönetim görünümü
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={refresh}>
-          Yenile
-        </Button>
+        <div className="flex items-center gap-2">
+          <a
+            href="/admin/guncelleme-notlari"
+            className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-300 transition hover:bg-amber-500/15"
+          >
+            📋 Geliştirme Notları
+          </a>
+          <Button variant="outline" size="sm" onClick={refresh}>
+            Yenile
+          </Button>
+        </div>
       </div>
 
       {/* Stats cards */}
