@@ -82,9 +82,71 @@ await app.register(jwt, {
 });
 
 // Internal /api/* (cookie auth opsiyonel — Next.js SSR ve tarayıcı çağrıları).
-// Scraping'i kısıtlamak için IP başına rate-limit. Programatik erişim için /v1/*.
+// Next.js middleware external rewrite'larda çalışmadığı için anti-scraping
+// (UA blocklist + rate-limit) burada, Fastify tarafında uygulanıyor.
+// Programatik erişim isteyenler için: /v1/* (API-key, plan quota).
+const BLOCKED_UA = [
+  /\bcurl\//i,
+  /\bwget\//i,
+  /python-requests/i,
+  /python-urllib/i,
+  /\bhttpx\//i,
+  /scrapy/i,
+  /Go-http-client/i,
+  /okhttp/i,
+  /aiohttp/i,
+  /^HTTPie/i,
+  /\bNode\.js\b/i,
+  /\bJava\//i,
+  /PhantomJS/i,
+  /HeadlessChrome/i,
+  /Puppeteer/i,
+  /Playwright/i,
+  /BLEXBot/i,
+  /MauiBot/i,
+  /SeekportBot/i,
+  /serpstatbot/i,
+  /ZoominfoBot/i,
+  /GPTBot/i,
+  /ClaudeBot/i,
+  /anthropic-ai/i,
+  /CCBot/i,
+  /PerplexityBot/i,
+  /Bytespider/i,
+  /DataForSeoBot/i,
+  /SemrushBot/i,
+  /AhrefsBot/i,
+];
+const ALLOWED_UA = [
+  /Googlebot/i,
+  /Bingbot/i,
+  /DuckDuckBot/i,
+  /YandexBot/i,
+  /Applebot/i,
+  /Slackbot/i,
+  /TelegramBot/i,
+  /WhatsApp/i,
+  /facebookexternalhit/i,
+  /Twitterbot/i,
+  /LinkedInBot/i,
+  /Discordbot/i,
+];
+
 await app.register(
   async (inner) => {
+    // UA allowlist/blocklist — programatik erişimi /v1/*'e yönlendir.
+    inner.addHook('onRequest', async (req, reply) => {
+      const ua = (req.headers['user-agent'] as string) ?? '';
+      if (ALLOWED_UA.some((re) => re.test(ua))) return;
+      if (!ua || BLOCKED_UA.some((re) => re.test(ua))) {
+        return reply.code(403).header('X-Blocked-Reason', 'automated-access').send({
+          error: 'Otomatik erişim algılandı',
+          message:
+            'Veriyi otomatik kullanmak için ücretsiz API anahtarıyla https://fonoloji.com/api-docs → /v1/* kullan.',
+        });
+      }
+    });
+
     await inner.register(rateLimit, {
       max: 60,
       timeWindow: '1 minute',
