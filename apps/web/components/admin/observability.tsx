@@ -1,12 +1,16 @@
 'use client';
 
+import { Activity, Cpu, Database, Globe, HardDrive, MemoryStick, Monitor, Server, Shield, Smartphone, Tablet, Wifi } from 'lucide-react';
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 
-// Admin observability paneli:
-//  - Canlı ziyaretçiler (son 5 dk)
-//  - API çağrı analitiği (endpoint, fon, IP, status)
-//  - Giden mail kopyaları
+// Admin observability paneli — GP_NEW tarzı:
+//  - Sistem sağlığı strip (CPU/RAM/Disk/DB/VPN/Node)
+//  - Sunucu kartı (IP, CPU model, hostname, uptime)
+//  - Canlı snapshot (aktif ziyaretçi, saatlik view/api/error)
+//  - Saatlik timeline (mini sparkline)
+//  - Cihaz dağılımı (mobile/desktop/tablet/bot)
+//  - Alt sekmeler: Canlı ziyaretçiler / Sayfa İstatistikleri / API Analitiği / Mailler
 
 type Tab = 'live' | 'api' | 'mail' | 'pages';
 
@@ -62,11 +66,381 @@ function uaShort(ua: string | null | undefined): string {
   return ua.split(/[ /]/)[0] ?? '—';
 }
 
+function fmtUptime(sec: number): string {
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (d > 0) return `${d}g ${h}sa`;
+  if (h > 0) return `${h}sa ${m}dk`;
+  return `${m}dk`;
+}
+
+function healthTint(percent: number, warn = 60, crit = 85): string {
+  if (percent >= crit) return 'bg-rose-500';
+  if (percent >= warn) return 'bg-amber-500';
+  return 'bg-emerald-500';
+}
+function healthText(percent: number, warn = 60, crit = 85): string {
+  if (percent >= crit) return 'text-rose-400';
+  if (percent >= warn) return 'text-amber-400';
+  return 'text-emerald-400';
+}
+
+interface SystemHealth {
+  ok: boolean;
+  now: number;
+  node: string;
+  platform: string;
+  arch: string;
+  hostname: string;
+  uptimeSeconds: number;
+  processUptimeSeconds: number;
+  publicIp: string | null;
+  cpu: {
+    model: string;
+    cores: number;
+    usagePercent: number;
+    loadAvg: { '1m': number; '5m': number; '15m': number };
+  };
+  memory: { totalMb: number; usedMb: number; freeMb: number; percent: number; processRssMb: number; processHeapMb: number };
+  disk: { totalGb: number; usedGb: number; availGb: number; percent: number } | null;
+  db: { sizeMb: number; ok: boolean; ms: number };
+  vpn: { connected: boolean; endpoint?: string };
+}
+
+interface Snapshot {
+  activeNow: number;
+  lastHour: { views: number; uniqueVisitors: number; apiCalls: number; apiErrors: number; avgMs: number };
+}
+
+interface TimelineItem {
+  bucket: number;
+  views: number;
+  uniq: number;
+  calls: number;
+  errors: number;
+}
+
+interface DevicesResp {
+  devices: { mobile: number; tablet: number; desktop: number; bot: number; unknown: number };
+  browsers: Array<{ name: string; count: number }>;
+}
+
+function HealthStrip() {
+  const [h, setH] = React.useState<SystemHealth | null>(null);
+  React.useEffect(() => {
+    const load = () =>
+      fetch('/admin-api/system-health', { credentials: 'include' })
+        .then((r) => r.json())
+        .then(setH)
+        .catch(() => {});
+    load();
+    const t = setInterval(load, 10_000);
+    return () => clearInterval(t);
+  }, []);
+  if (!h) {
+    return (
+      <div className="rounded-xl border border-border/60 bg-card/40 p-4 text-xs text-muted-foreground">
+        Sistem sağlığı yükleniyor…
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <Activity className="h-3.5 w-3.5 text-emerald-400" /> Sistem Sağlığı
+        <span className="ml-auto font-normal normal-case text-[10px]">10 sn'de bir güncellenir</span>
+      </div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+        <HealthCard label="Sunucu" icon={<Server className="h-3.5 w-3.5" />} ok detail={fmtUptime(h.processUptimeSeconds) + ' prc'} />
+        <HealthCard
+          label="Database"
+          icon={<Database className="h-3.5 w-3.5" />}
+          ok={h.db.ok}
+          detail={`${h.db.ms}ms · ${h.db.sizeMb}MB`}
+        />
+        <HealthCard
+          label="VPN (IPsec)"
+          icon={<Shield className="h-3.5 w-3.5" />}
+          ok={h.vpn.connected}
+          detail={h.vpn.connected ? h.vpn.endpoint ?? 'bağlı' : 'kopuk'}
+        />
+        <HealthCard
+          label="Memory"
+          icon={<MemoryStick className="h-3.5 w-3.5" />}
+          ok={h.memory.percent < 80}
+          detail={`${h.memory.usedMb}/${h.memory.totalMb} MB`}
+        />
+        <HealthCard
+          label="Disk"
+          icon={<HardDrive className="h-3.5 w-3.5" />}
+          ok={h.disk ? h.disk.percent < 85 : true}
+          detail={h.disk ? `${h.disk.usedGb}/${h.disk.totalGb} GB` : 'n/a'}
+        />
+        <HealthCard label="Node" icon={<Cpu className="h-3.5 w-3.5" />} ok detail={h.node} />
+      </div>
+
+      {/* Server info + 3 progress bars */}
+      <div className="rounded-xl border border-border/60 bg-card/40 p-4">
+        <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <Server className="h-3.5 w-3.5" /> Sunucu Bilgileri
+        </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <ProgressBar
+            label="CPU"
+            percent={h.cpu.usagePercent}
+            detail={`${h.cpu.cores} çekirdek · Load ${h.cpu.loadAvg['1m']} / ${h.cpu.loadAvg['5m']} / ${h.cpu.loadAvg['15m']}`}
+          />
+          <ProgressBar
+            label="RAM"
+            percent={h.memory.percent}
+            detail={`${Math.round((h.memory.usedMb / 1024) * 10) / 10} / ${Math.round((h.memory.totalMb / 1024) * 10) / 10} GB`}
+          />
+          {h.disk && (
+            <ProgressBar label="Disk" percent={h.disk.percent} detail={`${h.disk.usedGb} / ${h.disk.totalGb} GB`} crit={90} warn={75} />
+          )}
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 text-xs md:grid-cols-4">
+          <InfoBlock label="Dış IP" value={h.publicIp ?? '—'} mono />
+          <InfoBlock label="CPU" value={h.cpu.model.split('@')[0]?.trim().slice(0, 28) ?? '—'} small />
+          <InfoBlock label="Hostname" value={h.hostname} mono />
+          <InfoBlock label="Uptime" value={fmtUptime(h.uptimeSeconds)} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HealthCard({ label, icon, ok, detail }: { label: string; icon: React.ReactNode; ok: boolean; detail: string }) {
+  return (
+    <div className="rounded-lg border border-border/60 bg-card/30 p-3">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {icon} {label}
+        <span className={cn('ml-auto h-1.5 w-1.5 rounded-full', ok ? 'bg-emerald-400' : 'bg-rose-400')} />
+      </div>
+      <div className="mt-1 truncate text-xs text-foreground/90" title={detail}>{detail}</div>
+    </div>
+  );
+}
+
+function ProgressBar({
+  label,
+  percent,
+  detail,
+  warn = 60,
+  crit = 85,
+}: {
+  label: string;
+  percent: number;
+  detail: string;
+  warn?: number;
+  crit?: number;
+}) {
+  return (
+    <div className="rounded-lg border border-border/40 bg-muted/20 p-3">
+      <div className="mb-1.5 flex items-center justify-between">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</div>
+        <div className={cn('font-mono text-xs font-bold tabular-nums', healthText(percent, warn, crit))}>{percent}%</div>
+      </div>
+      <div className="h-2 w-full overflow-hidden rounded-full bg-muted/50">
+        <div
+          className={cn('h-full rounded-full transition-all duration-500', healthTint(percent, warn, crit))}
+          style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
+        />
+      </div>
+      <div className="mt-1 text-[10px] text-muted-foreground">{detail}</div>
+    </div>
+  );
+}
+
+function InfoBlock({ label, value, mono, small }: { label: string; value: string; mono?: boolean; small?: boolean }) {
+  return (
+    <div className="rounded-lg bg-muted/30 p-3">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className={cn('mt-0.5', mono && 'font-mono', small ? 'text-[11px]' : 'text-xs font-semibold')}>{value}</div>
+    </div>
+  );
+}
+
+function LiveSnapshot() {
+  const [s, setS] = React.useState<Snapshot | null>(null);
+  React.useEffect(() => {
+    const load = () =>
+      fetch('/admin-api/analytics/snapshot', { credentials: 'include' })
+        .then((r) => r.json())
+        .then(setS)
+        .catch(() => {});
+    load();
+    const t = setInterval(load, 5_000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+      <StatCard
+        label="ŞU AN AKTİF"
+        value={s?.activeNow ?? '—'}
+        sub="Son 5 dk"
+        pulse
+      />
+      <StatCard label="1 SAATLİK VIEW" value={s?.lastHour.views ?? '—'} sub={`${s?.lastHour.uniqueVisitors ?? 0} benzersiz`} />
+      <StatCard label="1 SAATLİK API" value={s?.lastHour.apiCalls ?? '—'} sub={`ort ${s?.lastHour.avgMs ?? 0}ms`} />
+      <StatCard
+        label="HATA"
+        value={s?.lastHour.apiErrors ?? '—'}
+        sub="1 saatte 4xx/5xx"
+        accent={s?.lastHour.apiErrors ? 'rose' : 'neutral'}
+      />
+      <StatCard label="CANLI STATÜ" value={s ? 'OK' : '—'} sub="5 sn refresh" accent="emerald" pulse />
+    </div>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  sub,
+  accent = 'neutral',
+  pulse,
+}: {
+  label: string;
+  value: string | number;
+  sub?: string;
+  accent?: 'neutral' | 'emerald' | 'rose' | 'brand';
+  pulse?: boolean;
+}) {
+  const accentCls = {
+    neutral: 'from-card/40 to-card/20',
+    emerald: 'from-emerald-500/15 to-emerald-500/5',
+    rose: 'from-rose-500/15 to-rose-500/5',
+    brand: 'from-brand-500/15 to-brand-500/5',
+  }[accent];
+  return (
+    <div className={cn('rounded-xl border border-border/60 bg-gradient-to-br p-4', accentCls)}>
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+        {pulse && <span className="relative flex h-1.5 w-1.5">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+        </span>}
+      </div>
+      <div className="mt-1 font-mono text-2xl tabular-nums">{value}</div>
+      {sub && <div className="mt-0.5 text-[11px] text-muted-foreground">{sub}</div>}
+    </div>
+  );
+}
+
+function TimelineChart() {
+  const [items, setItems] = React.useState<TimelineItem[]>([]);
+  const [hours, setHours] = React.useState(24);
+  React.useEffect(() => {
+    fetch(`/admin-api/analytics/timeline?hours=${hours}`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setItems(d.items ?? []));
+  }, [hours]);
+  const maxViews = Math.max(1, ...items.map((i) => i.views));
+  const maxCalls = Math.max(1, ...items.map((i) => i.calls));
+  return (
+    <div className="rounded-xl border border-border/60 bg-card/40 p-4">
+      <div className="mb-3 flex items-center gap-3">
+        <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Trafik Zaman Çizelgesi</div>
+        <div className="ml-auto flex gap-1">
+          {[6, 24, 168].map((h) => (
+            <button
+              key={h}
+              onClick={() => setHours(h)}
+              className={cn(
+                'rounded-md px-2 py-1 text-xs',
+                hours === h ? 'bg-brand-500/20 text-brand-200' : 'bg-muted/30 hover:bg-muted/50',
+              )}
+            >
+              {h === 168 ? '7g' : `${h}sa`}
+            </button>
+          ))}
+        </div>
+      </div>
+      {items.length === 0 ? (
+        <div className="py-6 text-center text-xs text-muted-foreground">Veri yok.</div>
+      ) : (
+        <div className="flex h-32 items-end gap-0.5">
+          {items.map((i) => {
+            const vh = (i.views / maxViews) * 100;
+            const ch = (i.calls / maxCalls) * 100;
+            return (
+              <div key={i.bucket} className="flex flex-1 flex-col justify-end gap-0.5" title={`${new Date(i.bucket).toLocaleString('tr-TR')}\nViews: ${i.views} · API: ${i.calls}`}>
+                <div className="rounded-t bg-brand-500/60" style={{ height: `${vh}%` }} />
+                <div className="rounded-b bg-verdigris-500/50" style={{ height: `${ch * 0.6}%` }} />
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div className="mt-2 flex gap-4 text-[10px] text-muted-foreground">
+        <span className="inline-flex items-center gap-1"><span className="h-2 w-3 rounded bg-brand-500/60" /> Sayfa görüntüleme</span>
+        <span className="inline-flex items-center gap-1"><span className="h-2 w-3 rounded bg-verdigris-500/50" /> API çağrıları</span>
+      </div>
+    </div>
+  );
+}
+
+function DeviceBreakdown() {
+  const [d, setD] = React.useState<DevicesResp | null>(null);
+  React.useEffect(() => {
+    fetch('/admin-api/analytics/devices?hours=24', { credentials: 'include' })
+      .then((r) => r.json())
+      .then(setD);
+  }, []);
+  if (!d) return null;
+  const total = d.devices.mobile + d.devices.tablet + d.devices.desktop + d.devices.bot + d.devices.unknown || 1;
+  const row = (
+    label: string,
+    count: number,
+    icon: React.ReactNode,
+  ) => (
+    <div className="rounded-lg border border-border/40 bg-muted/20 p-2.5">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {icon} {label}
+      </div>
+      <div className="mt-1 font-mono text-lg">{count}</div>
+      <div className="text-[10px] text-muted-foreground">{Math.round((count / total) * 100)}%</div>
+    </div>
+  );
+  return (
+    <div className="rounded-xl border border-border/60 bg-card/40 p-4">
+      <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Cihaz & Tarayıcı (24 sa)</div>
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+        {row('Masaüstü', d.devices.desktop, <Monitor className="h-3 w-3" />)}
+        {row('Mobil', d.devices.mobile, <Smartphone className="h-3 w-3" />)}
+        {row('Tablet', d.devices.tablet, <Tablet className="h-3 w-3" />)}
+        {row('Bot', d.devices.bot, <Globe className="h-3 w-3" />)}
+        {row('Diğer', d.devices.unknown, <Wifi className="h-3 w-3" />)}
+      </div>
+      {d.browsers.length > 0 && (
+        <div className="mt-3">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Tarayıcılar</div>
+          <div className="flex flex-wrap gap-1.5 text-[11px]">
+            {d.browsers.slice(0, 8).map((b) => (
+              <span key={b.name} className="rounded-full bg-muted/30 px-2 py-0.5">
+                {b.name} <span className="text-muted-foreground">· {b.count}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Observability() {
   const [tab, setTab] = React.useState<Tab>('live');
   return (
     <div className="space-y-4">
-      <div className="flex gap-2 border-b border-border/50">
+      <HealthStrip />
+      <LiveSnapshot />
+      <div className="grid gap-3 lg:grid-cols-5">
+        <div className="lg:col-span-3"><TimelineChart /></div>
+        <div className="lg:col-span-2"><DeviceBreakdown /></div>
+      </div>
+      <div className="mt-6 flex gap-2 border-b border-border/50">
         {([
           { k: 'live', label: 'Canlı' },
           { k: 'pages', label: 'Sayfa İst.' },

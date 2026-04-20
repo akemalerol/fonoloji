@@ -83,6 +83,7 @@ interface OutgoingEmailRow {
   status: 'sent' | 'failed';
   error?: string | null;
   userId?: number | null;
+  contactMessageId?: number | null;
 }
 
 export function logOutgoingEmail(db: Database, row: OutgoingEmailRow): void {
@@ -97,8 +98,8 @@ export function logOutgoingEmail(db: Database, row: OutgoingEmailRow): void {
           .slice(0, 300)
       : null;
     db.prepare(
-      `INSERT INTO outgoing_emails (ts, to_email, subject, template, body_preview, body_html, status, error, user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO outgoing_emails (ts, to_email, subject, template, body_preview, body_html, status, error, user_id, contact_message_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       Date.now(),
       row.toEmail,
@@ -109,6 +110,7 @@ export function logOutgoingEmail(db: Database, row: OutgoingEmailRow): void {
       row.status,
       row.error ?? null,
       row.userId ?? null,
+      row.contactMessageId ?? null,
     );
   } catch {
     /* noop */

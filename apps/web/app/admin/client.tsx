@@ -1219,6 +1219,17 @@ function StatCard({
   );
 }
 
+interface ThreadReply {
+  id: number;
+  ts: number;
+  to_email: string;
+  subject: string;
+  body_preview: string | null;
+  body_html: string | null;
+  status: 'sent' | 'failed';
+  error: string | null;
+}
+
 function MessagePanel({
   msg,
   onDelete,
@@ -1234,6 +1245,15 @@ function MessagePanel({
   const [sending, setSending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [sent, setSent] = React.useState(false);
+  const [thread, setThread] = React.useState<ThreadReply[]>([]);
+  const [openReplyId, setOpenReplyId] = React.useState<number | null>(null);
+
+  const loadThread = React.useCallback(() => {
+    fetch(`/admin-api/messages/${msg.id}/thread`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setThread(d.replies ?? []))
+      .catch(() => setThread([]));
+  }, [msg.id]);
 
   React.useEffect(() => {
     setComposing(false);
@@ -1241,7 +1261,8 @@ function MessagePanel({
     setBody('');
     setError(null);
     setSent(false);
-  }, [msg.id, msg.subject]);
+    loadThread();
+  }, [msg.id, msg.subject, loadThread]);
 
   async function send() {
     if (body.trim().length < 3) {
@@ -1298,6 +1319,51 @@ function MessagePanel({
       </div>
 
       <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">{msg.message}</div>
+
+      {thread.length > 0 && (
+        <div className="mt-6 space-y-2">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Gönderdiğin yanıtlar ({thread.length})
+          </div>
+          {thread.map((r) => (
+            <div key={r.id} className="rounded-lg border border-border/60 bg-card/40">
+              <button
+                type="button"
+                onClick={() => setOpenReplyId(openReplyId === r.id ? null : r.id)}
+                className="flex w-full items-start justify-between gap-3 px-3 py-2 text-left"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium">{r.subject}</div>
+                  <div className="mt-0.5 text-[11px] text-muted-foreground">
+                    {new Date(r.ts).toLocaleString('tr-TR')} → {r.to_email}
+                  </div>
+                  {r.body_preview && (
+                    <div className="mt-1 line-clamp-2 text-xs text-muted-foreground/80">{r.body_preview}</div>
+                  )}
+                </div>
+                <span className={cn(
+                  'shrink-0 rounded px-1.5 py-0.5 text-[10px]',
+                  r.status === 'sent' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300',
+                )}>
+                  {r.status === 'sent' ? 'gönderildi' : 'hata'}
+                </span>
+              </button>
+              {openReplyId === r.id && r.body_html && (
+                <div className="border-t border-border/40 p-2">
+                  <iframe
+                    srcDoc={r.body_html}
+                    className="h-96 w-full rounded border border-border/40 bg-white"
+                    sandbox=""
+                  />
+                </div>
+              )}
+              {openReplyId === r.id && r.error && (
+                <div className="border-t border-border/40 px-3 py-2 text-xs text-rose-300">{r.error}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {sent ? (
         <div className="mt-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-300">

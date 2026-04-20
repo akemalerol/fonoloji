@@ -9,6 +9,7 @@ async function sendAndLog(args: {
   resend: Resend;
   template: string;
   userId?: number | null;
+  contactMessageId?: number | null;
   payload: Parameters<Resend['emails']['send']>[0];
 }): Promise<{ ok: boolean; error?: string }> {
   let ok = false;
@@ -34,6 +35,7 @@ async function sendAndLog(args: {
       status: ok ? 'sent' : 'failed',
       error: error ?? null,
       userId: args.userId ?? null,
+      contactMessageId: args.contactMessageId ?? null,
     });
   } catch {
     /* noop */
@@ -240,6 +242,7 @@ export async function sendContactReply(
     originalSubject: string;
     originalMessage: string;
     customerName: string;
+    contactMessageId?: number;
   },
 ): Promise<SendResult> {
   const resend = getResend();
@@ -254,6 +257,7 @@ export async function sendContactReply(
   return sendAndLog({
     resend,
     template: 'contact-reply',
+    contactMessageId: data.contactMessageId ?? null,
     payload: {
       from: FROM_EMAIL,
       to,

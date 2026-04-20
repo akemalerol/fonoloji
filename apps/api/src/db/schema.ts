@@ -471,6 +471,8 @@ const ADDITIONAL_COLUMNS: Array<{ table: string; column: string; type: string }>
   // Geo: Cloudflare cf-ipcountry header'ından okunur ('TR','US','DE'...). '-' veya NULL = bilinmiyor.
   { table: 'page_visits', column: 'country', type: 'TEXT' },
   { table: 'api_requests', column: 'country', type: 'TEXT' },
+  // Mail → contact_message eşlemesi: thread görünümü için
+  { table: 'outgoing_emails', column: 'contact_message_id', type: 'INTEGER' },
 ];
 
 export function applySchema(db: Database): void {

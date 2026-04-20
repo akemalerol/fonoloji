@@ -4,6 +4,7 @@ import { getDb } from '../db/index.js';
 import { planFor, PLANS } from '../auth/plans.js';
 import { findUserById, setCustomLimits, setDisabled, setEmailVerified, setPlan, type UserRecord } from '../auth/users.js';
 import { sendAdminBroadcast, sendContactReply } from '../services/mail.js';
+import { getSystemHealth } from '../services/systemHealth.js';
 import { generateTweet, postTweet, queueTweet, type TweetContext } from '../services/x.js';
 
 const COOKIE_NAME = 'fonoloji_session';
@@ -238,6 +239,24 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
     return { ok: true };
   });
 
+  // Tek mesajın tüm thread'i: orijinal + bu mesaja bağlı outgoing_emails kayıtları
+  app.get('/messages/:id/thread', async (req, reply) => {
+    const id = Number((req.params as { id: string }).id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: 'id' });
+    const db = getDb();
+    const msg = db.prepare(`SELECT * FROM contact_messages WHERE id = ?`).get(id);
+    if (!msg) return reply.code(404).send({ error: 'bulunamadı' });
+    const replies = db
+      .prepare(
+        `SELECT id, ts, to_email, subject, body_preview, body_html, status, error
+         FROM outgoing_emails
+         WHERE contact_message_id = ?
+         ORDER BY ts ASC`,
+      )
+      .all(id);
+    return { message: msg, replies };
+  });
+
   app.delete('/messages/:id', async (req, reply) => {
     const id = Number((req.params as { id: string }).id);
     const db = getDb();
@@ -272,6 +291,7 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
       originalSubject: msg.subject,
       originalMessage: msg.message,
       customerName: msg.full_name,
+      contactMessageId: id,
     });
 
     if (!result.ok) {
@@ -484,7 +504,116 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
     return reply.code(r.changes > 0 ? 200 : 404).send({ ok: r.changes > 0 });
   });
 
-  // === Observability: canlı ziyaretçi + analitik + mail logu ===
+  // === Observability: canlı ziyaretçi + analitik + mail logu + sistem sağlığı ===
+
+  // Sistem sağlığı: CPU / RAM / Disk / Uptime / DB / VPN — 10 sn polling için.
+  app.get('/system-health', async () => getSystemHealth());
+
+  // Saatlik timeline — son N saatte pageview + api request dağılımı.
+  app.get('/analytics/timeline', async (req) => {
+    const { hours = '24' } = req.query as { hours?: string };
+    const h = Math.max(1, Math.min(168, Number(hours) || 24));
+    const cutoff = Date.now() - h * 3_600_000;
+    const bucketMs = h <= 24 ? 3_600_000 : 6 * 3_600_000; // 1h veya 6h bucket
+    const db = getDb();
+    const pageRows = db
+      .prepare(
+        `SELECT (ts / ?) * ? as bucket, COUNT(*) as views, COUNT(DISTINCT ip) as uniq
+         FROM page_visits WHERE ts >= ? GROUP BY bucket ORDER BY bucket ASC`,
+      )
+      .all(bucketMs, bucketMs, cutoff) as Array<{ bucket: number; views: number; uniq: number }>;
+    const apiRows = db
+      .prepare(
+        `SELECT (ts / ?) * ? as bucket, COUNT(*) as calls,
+                SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors
+         FROM api_requests WHERE ts >= ? GROUP BY bucket ORDER BY bucket ASC`,
+      )
+      .all(bucketMs, bucketMs, cutoff) as Array<{ bucket: number; calls: number; errors: number }>;
+
+    // Merge: bucket başına tüm alanları birleştir
+    const map = new Map<number, { bucket: number; views: number; uniq: number; calls: number; errors: number }>();
+    for (const r of pageRows) map.set(r.bucket, { bucket: r.bucket, views: r.views, uniq: r.uniq, calls: 0, errors: 0 });
+    for (const r of apiRows) {
+      const ex = map.get(r.bucket) ?? { bucket: r.bucket, views: 0, uniq: 0, calls: 0, errors: 0 };
+      ex.calls = r.calls;
+      ex.errors = r.errors;
+      map.set(r.bucket, ex);
+    }
+    const items = [...map.values()].sort((a, b) => a.bucket - b.bucket);
+    return { hours: h, bucketMs, items };
+  });
+
+  // Cihaz / tarayıcı dağılımı: UA'dan kabaca parse.
+  app.get('/analytics/devices', async (req) => {
+    const { hours = '24' } = req.query as { hours?: string };
+    const h = Math.max(1, Math.min(720, Number(hours) || 24));
+    const cutoff = Date.now() - h * 3_600_000;
+    const db = getDb();
+    const uas = db
+      .prepare(`SELECT user_agent FROM page_visits WHERE ts >= ? AND user_agent IS NOT NULL`)
+      .all(cutoff) as Array<{ user_agent: string }>;
+    const devices = { mobile: 0, tablet: 0, desktop: 0, bot: 0, unknown: 0 };
+    const browsers = new Map<string, number>();
+    for (const { user_agent: ua } of uas) {
+      const bot = /bot|crawl|spider|slurp|facebookexternalhit|whatsapp|telegram/i.test(ua);
+      const tablet = /iPad|Tablet|PlayBook/i.test(ua);
+      const mobile = !tablet && /Mobi|Android.*Mobile|iPhone|iPod/i.test(ua);
+      if (bot) devices.bot++;
+      else if (tablet) devices.tablet++;
+      else if (mobile) devices.mobile++;
+      else if (/Mozilla|Chrome|Safari|Firefox|Edge/i.test(ua)) devices.desktop++;
+      else devices.unknown++;
+
+      let b = 'Other';
+      if (/Edg\//i.test(ua)) b = 'Edge';
+      else if (/OPR\/|Opera/i.test(ua)) b = 'Opera';
+      else if (/Chrome\//i.test(ua)) b = 'Chrome';
+      else if (/Firefox\//i.test(ua)) b = 'Firefox';
+      else if (/Safari\//i.test(ua) && !/Chrome/i.test(ua)) b = 'Safari';
+      else if (bot) b = 'Bot';
+      browsers.set(b, (browsers.get(b) ?? 0) + 1);
+    }
+    return {
+      hours: h,
+      devices,
+      browsers: [...browsers.entries()]
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count),
+    };
+  });
+
+  // Live snapshot — anlık özet (aktif 5dk, son 1 saat pageview/api calls/hata).
+  app.get('/analytics/snapshot', async () => {
+    const db = getDb();
+    const now = Date.now();
+    const fiveMin = now - 5 * 60_000;
+    const oneHour = now - 60 * 60_000;
+    const r1 = db
+      .prepare(`SELECT COUNT(DISTINCT ip) as active FROM page_visits WHERE ts >= ?`)
+      .get(fiveMin) as { active: number };
+    const r2 = db
+      .prepare(`SELECT COUNT(*) as views, COUNT(DISTINCT ip) as uniq FROM page_visits WHERE ts >= ?`)
+      .get(oneHour) as { views: number; uniq: number };
+    const r3 = db
+      .prepare(
+        `SELECT COUNT(*) as calls,
+                SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors,
+                AVG(duration_ms) as avg_ms
+         FROM api_requests WHERE ts >= ?`,
+      )
+      .get(oneHour) as { calls: number; errors: number; avg_ms: number };
+    return {
+      activeNow: r1.active,
+      lastHour: {
+        views: r2.views,
+        uniqueVisitors: r2.uniq,
+        apiCalls: r3.calls,
+        apiErrors: r3.errors,
+        avgMs: Math.round(r3.avg_ms ?? 0),
+      },
+    };
+  });
+
 
   // Son N dakikada aktif IP'ler ve en son baktığı sayfa.
   // Default: 5 dk. Her IP için: son path, son ts, toplam pageview, userId varsa email.
