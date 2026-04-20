@@ -735,6 +735,13 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
          ORDER BY c DESC`,
       )
       .all(cutoff);
+    const { page = '1', pageSize = '20' } = req.query as { page?: string; pageSize?: string };
+    const ps = Math.max(1, Math.min(100, Number(pageSize) || 20));
+    const pg = Math.max(1, Number(page) || 1);
+    const offset = (pg - 1) * ps;
+    const ipTotalRow = db
+      .prepare(`SELECT COUNT(DISTINCT ip) as c FROM api_requests WHERE ts >= ? AND ip IS NOT NULL`)
+      .get(cutoff) as { c: number };
     const topIps = db
       .prepare(
         `SELECT ip, COUNT(*) as calls,
@@ -745,9 +752,10 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
          WHERE ts >= ? AND ip IS NOT NULL
          GROUP BY ip
          ORDER BY calls DESC
-         LIMIT 20`,
+         LIMIT ? OFFSET ?`,
       )
-      .all(cutoff);
+      .all(cutoff, ps, offset);
+    const ipPagination = { page: pg, pageSize: ps, total: ipTotalRow.c, pageCount: Math.max(1, Math.ceil(ipTotalRow.c / ps)) };
     const totals = db
       .prepare(
         `SELECT COUNT(*) as calls,
@@ -767,7 +775,76 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
          LIMIT 15`,
       )
       .all(cutoff);
-    return { windowHours: windowMs / 3_600_000, totals, topEndpoints, topFunds, statusDist, topIps, topCountries };
+    return { windowHours: windowMs / 3_600_000, totals, topEndpoints, topFunds, statusDist, topIps, ipPagination, topCountries };
+  });
+
+  // IP detay drill-down: seçili IP'nin son N saatte ne yaptığı —
+  // hangi endpoint, hangi fon, kaç kez, hata sayısı + son 50 request detayı.
+  app.get('/api-stats/ip', async (req, reply) => {
+    const { ip, hours = '24' } = req.query as { ip?: string; hours?: string };
+    if (!ip) return reply.code(400).send({ error: 'ip parametresi gerekli' });
+    const h = Math.max(1, Math.min(720, Number(hours) || 24));
+    const cutoff = Date.now() - h * 3_600_000;
+    const db = getDb();
+
+    const totals = db
+      .prepare(
+        `SELECT COUNT(*) as calls,
+                COUNT(DISTINCT path) as uniquePaths,
+                COUNT(DISTINCT fund_code) as uniqueFunds,
+                SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors,
+                AVG(duration_ms) as avgMs,
+                MIN(ts) as firstSeen,
+                MAX(ts) as lastSeen,
+                (SELECT country FROM api_requests WHERE ip = ? AND country IS NOT NULL ORDER BY ts DESC LIMIT 1) as country,
+                (SELECT user_agent FROM api_requests WHERE ip = ? ORDER BY ts DESC LIMIT 1) as userAgent
+         FROM api_requests
+         WHERE ip = ? AND ts >= ?`,
+      )
+      .get(ip, ip, ip, cutoff);
+    const topEndpoints = db
+      .prepare(
+        `SELECT path, method, COUNT(*) as calls, AVG(duration_ms) as avgMs,
+                SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors
+         FROM api_requests WHERE ip = ? AND ts >= ?
+         GROUP BY path, method ORDER BY calls DESC LIMIT 30`,
+      )
+      .all(ip, cutoff);
+    const topFunds = db
+      .prepare(
+        `SELECT fund_code, COUNT(*) as calls
+         FROM api_requests WHERE ip = ? AND ts >= ? AND fund_code IS NOT NULL
+         GROUP BY fund_code ORDER BY calls DESC LIMIT 30`,
+      )
+      .all(ip, cutoff);
+    // Son 100 istek (chronological tail) — gerçek kullanım paterni
+    const recent = db
+      .prepare(
+        `SELECT ts, method, path, fund_code, status, duration_ms, api_key_id, user_id
+         FROM api_requests WHERE ip = ? AND ts >= ?
+         ORDER BY ts DESC LIMIT 100`,
+      )
+      .all(ip, cutoff);
+    // Varsa bağlı kullanıcı / API key bilgisi
+    const linkedUser = db
+      .prepare(
+        `SELECT DISTINCT u.id, u.email, u.plan, u.role
+         FROM api_requests r JOIN users u ON u.id = r.user_id
+         WHERE r.ip = ? AND r.ts >= ? AND r.user_id IS NOT NULL LIMIT 1`,
+      )
+      .get(ip, cutoff);
+    const linkedKeys = db
+      .prepare(
+        `SELECT k.id, k.key_prefix, k.name, u.email
+         FROM api_requests r
+         JOIN api_keys k ON k.id = r.api_key_id
+         LEFT JOIN users u ON u.id = k.user_id
+         WHERE r.ip = ? AND r.ts >= ? AND r.api_key_id IS NOT NULL
+         GROUP BY k.id`,
+      )
+      .all(ip, cutoff);
+
+    return { ip, hours: h, totals, topEndpoints, topFunds, recent, linkedUser, linkedKeys };
   });
 
   // Giden mail'lerin kopyaları (admin panelde görünür).

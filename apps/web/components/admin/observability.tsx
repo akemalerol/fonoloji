@@ -722,20 +722,49 @@ interface ApiStatsResp {
   topFunds: Array<{ fund_code: string; calls: number; unique_ips: number }>;
   statusDist: Array<{ status: number; c: number }>;
   topIps: Array<{ ip: string; calls: number; errors: number; user_agent: string | null; country: string | null }>;
+  ipPagination?: { page: number; pageSize: number; total: number; pageCount: number };
   topCountries?: Array<{ country: string; calls: number; unique_ips: number }>;
+}
+
+interface IpDetailResp {
+  ip: string;
+  hours: number;
+  totals: {
+    calls: number;
+    uniquePaths: number;
+    uniqueFunds: number;
+    errors: number;
+    avgMs: number;
+    firstSeen: number;
+    lastSeen: number;
+    country: string | null;
+    userAgent: string | null;
+  };
+  topEndpoints: Array<{ path: string; method: string; calls: number; avgMs: number; errors: number }>;
+  topFunds: Array<{ fund_code: string; calls: number }>;
+  recent: Array<{ ts: number; method: string; path: string; fund_code: string | null; status: number; duration_ms: number; api_key_id: number | null; user_id: number | null }>;
+  linkedUser: { id: number; email: string; plan: string; role: string } | null;
+  linkedKeys: Array<{ id: number; key_prefix: string; name: string | null; email: string | null }>;
 }
 
 function ApiStats() {
   const [data, setData] = React.useState<ApiStatsResp | null>(null);
   const [hours, setHours] = React.useState(24);
   const [loading, setLoading] = React.useState(true);
+  const [ipPage, setIpPage] = React.useState(1);
+  const [drillIp, setDrillIp] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     setLoading(true);
-    fetch(`/admin-api/api-stats?hours=${hours}`, { credentials: 'include' })
+    fetch(`/admin-api/api-stats?hours=${hours}&page=${ipPage}&pageSize=20`, { credentials: 'include' })
       .then((r) => r.json())
       .then(setData)
       .finally(() => setLoading(false));
+  }, [hours, ipPage]);
+
+  React.useEffect(() => {
+    // Pencere değişince sayfa 1'e dön
+    setIpPage(1);
   }, [hours]);
 
   return (
@@ -816,15 +845,21 @@ function ApiStats() {
           </table>
         </div>
         <div className="rounded-lg border border-border/60">
-          <div className="border-b border-border/40 bg-muted/20 px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">
-            Top IP'ler
+          <div className="flex items-center justify-between border-b border-border/40 bg-muted/20 px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">
+            <span>IP'ler — tıklayınca detay</span>
+            {data?.ipPagination && (
+              <span className="font-normal normal-case text-[10px]">
+                {data.ipPagination.total} IP toplam
+              </span>
+            )}
           </div>
           <table className="w-full text-sm">
             <tbody>
               {(data?.topIps ?? []).map((ip) => (
-                <tr key={ip.ip} className="border-t border-border/40">
+                <tr key={ip.ip} className="cursor-pointer border-t border-border/40 hover:bg-muted/20" onClick={() => setDrillIp(ip.ip)}>
                   <td className="px-3 py-1.5 font-mono text-xs">
-                    <span className="mr-2">{flagEmoji(ip.country) ?? ''}</span>{ip.ip}
+                    <span className="mr-2">{flagEmoji(ip.country) ?? ''}</span>
+                    <span className="hover:text-brand-300">{ip.ip}</span>
                   </td>
                   <td className="px-3 py-1.5 text-right text-xs">{ip.calls}</td>
                   <td className={cn('px-3 py-1.5 text-right text-xs', ip.errors > 0 && 'text-rose-400')}>
@@ -833,8 +868,38 @@ function ApiStats() {
                   <td className="px-3 py-1.5 text-right text-xs text-muted-foreground">{uaShort(ip.user_agent)}</td>
                 </tr>
               ))}
+              {(data?.topIps ?? []).length === 0 && !loading && (
+                <tr>
+                  <td colSpan={4} className="px-3 py-6 text-center text-xs text-muted-foreground">
+                    Bu pencerede IP yok.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
+          {data?.ipPagination && data.ipPagination.pageCount > 1 && (
+            <div className="flex items-center justify-between border-t border-border/40 bg-muted/10 px-3 py-2 text-xs">
+              <button
+                type="button"
+                disabled={ipPage <= 1}
+                onClick={() => setIpPage((p) => Math.max(1, p - 1))}
+                className="rounded-md bg-muted/40 px-2 py-1 hover:bg-muted/60 disabled:opacity-40"
+              >
+                ← Önceki
+              </button>
+              <span className="text-muted-foreground">
+                Sayfa {ipPage} / {data.ipPagination.pageCount}
+              </span>
+              <button
+                type="button"
+                disabled={ipPage >= data.ipPagination.pageCount}
+                onClick={() => setIpPage((p) => Math.min(data.ipPagination!.pageCount, p + 1))}
+                className="rounded-md bg-muted/40 px-2 py-1 hover:bg-muted/60 disabled:opacity-40"
+              >
+                Sonraki →
+              </button>
+            </div>
+          )}
         </div>
         <div className="rounded-lg border border-border/60">
           <div className="border-b border-border/40 bg-muted/20 px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">
@@ -886,6 +951,169 @@ function ApiStats() {
           </table>
         </div>
       </div>
+      {drillIp && <IpDetailModal ip={drillIp} hours={hours} onClose={() => setDrillIp(null)} />}
+    </div>
+  );
+}
+
+function IpDetailModal({ ip, hours, onClose }: { ip: string; hours: number; onClose: () => void }) {
+  const [d, setD] = React.useState<IpDetailResp | null>(null);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    setLoading(true);
+    fetch(`/admin-api/api-stats/ip?ip=${encodeURIComponent(ip)}&hours=${hours}`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then(setD)
+      .finally(() => setLoading(false));
+  }, [ip, hours]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="mt-8 w-full max-w-4xl rounded-xl border border-border bg-background shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-border/50 bg-muted/20 px-4 py-3">
+          <div>
+            <div className="flex items-center gap-2 font-mono text-sm">
+              {flagEmoji(d?.totals.country) ?? ''}
+              <span className="font-semibold">{ip}</span>
+              {d?.linkedUser && (
+                <span className="rounded-full bg-brand-500/20 px-2 py-0.5 text-[10px] text-brand-300">
+                  👤 {d.linkedUser.email} · {d.linkedUser.plan}
+                </span>
+              )}
+              {d?.linkedKeys && d.linkedKeys.length > 0 && (
+                <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] text-emerald-300">
+                  🔑 {d.linkedKeys.length} anahtar
+                </span>
+              )}
+            </div>
+            <div className="mt-0.5 text-[11px] text-muted-foreground">Son {hours} saat · {uaShort(d?.totals.userAgent)}</div>
+          </div>
+          <button onClick={onClose} className="rounded-md p-1 hover:bg-muted/50" aria-label="kapat">
+            ✕
+          </button>
+        </div>
+
+        {loading || !d ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">Yükleniyor…</div>
+        ) : (
+          <div className="max-h-[80vh] overflow-y-auto p-4 space-y-4">
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+              <MiniStat label="Toplam istek" value={d.totals.calls} />
+              <MiniStat label="Endpoint" value={d.totals.uniquePaths} />
+              <MiniStat label="Farklı fon" value={d.totals.uniqueFunds} />
+              <MiniStat label="Hata" value={d.totals.errors} accent={d.totals.errors > 0 ? 'rose' : 'neutral'} />
+              <MiniStat label="Ort ms" value={Math.round(d.totals.avgMs ?? 0)} />
+            </div>
+
+            {d.linkedKeys.length > 0 && (
+              <div className="rounded-lg border border-border/60 bg-card/30 p-3">
+                <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Kullanılan API anahtarları</div>
+                <div className="space-y-1">
+                  {d.linkedKeys.map((k) => (
+                    <div key={k.id} className="flex items-center gap-2 text-xs">
+                      <span className="font-mono">{k.key_prefix}…</span>
+                      {k.name && <span className="text-muted-foreground">· {k.name}</span>}
+                      {k.email && <span className="ml-auto text-muted-foreground">{k.email}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-lg border border-border/60">
+                <div className="border-b border-border/40 bg-muted/20 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Sorguladığı endpoint'ler
+                </div>
+                <table className="w-full text-xs">
+                  <tbody>
+                    {d.topEndpoints.map((e, i) => (
+                      <tr key={i} className="border-t border-border/40">
+                        <td className="px-3 py-1 font-mono">
+                          <span className="mr-1.5 rounded bg-muted/30 px-1 py-0.5 text-[9px]">{e.method}</span>
+                          {e.path}
+                        </td>
+                        <td className="px-3 py-1 text-right">{e.calls}</td>
+                        <td className="px-3 py-1 text-right text-muted-foreground">{Math.round(e.avgMs)}ms</td>
+                        <td className={cn('px-3 py-1 text-right', e.errors > 0 && 'text-rose-400')}>{e.errors > 0 ? `${e.errors} ✕` : ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="rounded-lg border border-border/60">
+                <div className="border-b border-border/40 bg-muted/20 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Sorguladığı fonlar
+                </div>
+                {d.topFunds.length === 0 ? (
+                  <div className="px-3 py-6 text-center text-xs text-muted-foreground">Fon sorgusu yok.</div>
+                ) : (
+                  <table className="w-full text-xs">
+                    <tbody>
+                      {d.topFunds.map((f) => (
+                        <tr key={f.fund_code} className="border-t border-border/40">
+                          <td className="px-3 py-1">
+                            <a href={`/fon/${f.fund_code}`} target="_blank" rel="noreferrer" className="font-mono text-brand-400 hover:underline">
+                              {f.fund_code}
+                            </a>
+                          </td>
+                          <td className="px-3 py-1 text-right">{f.calls}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border/60">
+              <div className="border-b border-border/40 bg-muted/20 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Son 100 istek — kronolojik
+              </div>
+              <div className="max-h-[260px] overflow-y-auto">
+                <table className="w-full text-xs">
+                  <tbody>
+                    {d.recent.map((r, i) => (
+                      <tr key={i} className="border-t border-border/40">
+                        <td className="whitespace-nowrap px-3 py-1 font-mono text-[10px] text-muted-foreground">{formatTs(r.ts)}</td>
+                        <td className="px-3 py-1">
+                          <span className="mr-1.5 rounded bg-muted/30 px-1 py-0.5 text-[9px]">{r.method}</span>
+                          <span className="font-mono">{r.path}</span>
+                        </td>
+                        <td className="px-3 py-1 text-right text-muted-foreground">{r.duration_ms}ms</td>
+                        <td
+                          className={cn(
+                            'px-3 py-1 text-right font-mono text-[10px]',
+                            r.status >= 500 && 'text-rose-400',
+                            r.status >= 400 && r.status < 500 && 'text-amber-400',
+                            r.status >= 200 && r.status < 300 && 'text-emerald-400',
+                          )}
+                        >
+                          {r.status}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MiniStat({ label, value, accent = 'neutral' }: { label: string; value: number | string; accent?: 'neutral' | 'rose' | 'emerald' }) {
+  const color = accent === 'rose' ? 'text-rose-400' : accent === 'emerald' ? 'text-emerald-400' : 'text-foreground';
+  return (
+    <div className="rounded-lg border border-border/40 bg-muted/10 p-2.5">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className={cn('mt-0.5 font-mono text-lg tabular-nums', color)}>{value}</div>
     </div>
   );
 }

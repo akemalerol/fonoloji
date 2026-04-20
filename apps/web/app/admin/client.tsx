@@ -2,6 +2,7 @@
 
 import { Activity, Ban, Check, CheckCircle2, ClipboardCopy, ExternalLink, Eye, Gauge, Key, Loader2, Mail, MailPlus, MoreVertical, Reply, Send, ShieldOff, Sparkles, Trash2, Twitter, UserCheck, UserX, Users as UsersIcon, Wallet, XCircle } from 'lucide-react';
 import { Observability } from '@/components/admin/observability';
+import { ApiGuide } from '@/components/admin/api-guide';
 import * as React from 'react';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Badge } from '@/components/ui/badge';
@@ -83,7 +84,7 @@ export function AdminClient({
   const [keys, setKeys] = React.useState(initialKeys);
   const [messages, setMessages] = React.useState<Message[]>([]);
   const [unreadCount, setUnreadCount] = React.useState(0);
-  const [tab, setTab] = React.useState<'users' | 'keys' | 'messages' | 'mail' | 'x' | 'observability'>('users');
+  const [tab, setTab] = React.useState<'users' | 'keys' | 'messages' | 'mail' | 'x' | 'observability' | 'apiguide'>('users');
   const [q, setQ] = React.useState('');
   const [openMsg, setOpenMsg] = React.useState<Message | null>(null);
   const [editingLimits, setEditingLimits] = React.useState<User | null>(null);
@@ -329,6 +330,12 @@ export function AdminClient({
           <span className="inline-flex items-center gap-1.5">
             <Eye className="h-3.5 w-3.5" />
             Canlı + Analitik
+          </span>
+        </TabBtn>
+        <TabBtn active={tab === 'apiguide'} onClick={() => setTab('apiguide')}>
+          <span className="inline-flex items-center gap-1.5">
+            <Sparkles className="h-3.5 w-3.5" />
+            API Kılavuzu
           </span>
         </TabBtn>
       </div>
@@ -600,10 +607,15 @@ export function AdminClient({
       ) : tab === 'x' ? (
         /* X (Tweet) composer + queue */
         <XComposer />
-      ) : (
+      ) : tab === 'observability' ? (
         /* Observability: canlı ziyaretçi + analitik + mail kopyaları */
         <div className="mt-6">
           <Observability />
+        </div>
+      ) : (
+        /* API Kılavuzu: API'den çekilebilen sorguların Türkçe özeti */
+        <div className="mt-6">
+          <ApiGuide />
         </div>
       )}
 
