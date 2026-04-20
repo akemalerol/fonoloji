@@ -115,10 +115,12 @@ app.addHook('onResponse', async (req, reply) => {
     // API-key ise req.apiKey plugin'den gelir; user ise JWT'den çözülür
     const apiKeyId = (req as unknown as { apiKey?: { id: number } }).apiKey?.id ?? null;
     const userId = (req as unknown as { user?: { sub: number } }).user?.sub ?? null;
+    const cfCountry = (req.headers['cf-ipcountry'] as string) ?? null;
     logApiRequest(db, {
       path,
       method: req.method,
       ip: getClientIp(req),
+      country: cfCountry && cfCountry !== 'XX' ? cfCountry : null,
       userId,
       apiKeyId,
       status: reply.statusCode,

@@ -468,6 +468,9 @@ const ADDITIONAL_COLUMNS: Array<{ table: string; column: string; type: string }>
   { table: 'funds', column: 'kap_backfilled_at', type: 'INTEGER' },
   // Watchlist klasör/grup — null = "Genel"
   { table: 'watchlist', column: 'folder', type: 'TEXT' },
+  // Geo: Cloudflare cf-ipcountry header'ından okunur ('TR','US','DE'...). '-' veya NULL = bilinmiyor.
+  { table: 'page_visits', column: 'country', type: 'TEXT' },
+  { table: 'api_requests', column: 'country', type: 'TEXT' },
 ];
 
 export function applySchema(db: Database): void {

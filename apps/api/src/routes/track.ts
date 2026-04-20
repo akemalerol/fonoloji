@@ -35,9 +35,11 @@ export const trackRoute: FastifyPluginAsync = async (app) => {
     const userId =
       (req as unknown as { user?: { sub: number } }).user?.sub ?? null;
 
+    const cfCountry = (req.headers['cf-ipcountry'] as string) ?? null;
     logPageVisit(getDb(), {
       path: cleanPath,
       ip: getIp(req),
+      country: cfCountry && cfCountry !== 'XX' ? cfCountry : null,
       userId,
       userAgent: (req.headers['user-agent'] as string) ?? null,
       referer: referer ?? null,

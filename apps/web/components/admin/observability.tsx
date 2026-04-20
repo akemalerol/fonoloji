@@ -29,6 +29,27 @@ function agoShort(ts: number): string {
   return `${Math.round(s / 86400)}g`;
 }
 
+// ISO 3166-1 alpha-2 country code → flag emoji via regional indicator pair.
+// 'TR' → 🇹🇷, 'US' → 🇺🇸. Invalid/bilinmeyen → null.
+function flagEmoji(code: string | null | undefined): string | null {
+  if (!code || code.length !== 2) return null;
+  const cc = code.toUpperCase();
+  if (!/^[A-Z]{2}$/.test(cc)) return null;
+  const base = 0x1f1e6 - 'A'.charCodeAt(0);
+  return String.fromCodePoint(cc.charCodeAt(0) + base, cc.charCodeAt(1) + base);
+}
+
+function FlagBadge({ country }: { country: string | null | undefined }) {
+  const flag = flagEmoji(country);
+  if (!flag) return <span className="text-muted-foreground/50">—</span>;
+  return (
+    <span title={country ?? ''} className="inline-flex items-center gap-1 text-xs">
+      <span className="text-base leading-none">{flag}</span>
+      <span className="font-mono text-[10px] text-muted-foreground">{country}</span>
+    </span>
+  );
+}
+
 function uaShort(ua: string | null | undefined): string {
   if (!ua) return '—';
   if (/Edg\//.test(ua)) return 'Edge';
@@ -86,6 +107,7 @@ interface LiveRow {
   last_path: string;
   last_referer: string | null;
   user_agent: string | null;
+  country: string | null;
 }
 
 function LiveVisitors() {
@@ -137,6 +159,7 @@ function LiveVisitors() {
           <thead className="bg-muted/20 text-xs uppercase tracking-wider text-muted-foreground">
             <tr>
               <th className="px-3 py-2 text-left">IP</th>
+              <th className="px-3 py-2 text-left">Ülke</th>
               <th className="px-3 py-2 text-left">Kullanıcı</th>
               <th className="px-3 py-2 text-left">Son Sayfa</th>
               <th className="px-3 py-2 text-right">Görüntüleme</th>
@@ -156,6 +179,7 @@ function LiveVisitors() {
                       {r.ip}
                     </button>
                   </td>
+                  <td className="px-3 py-2"><FlagBadge country={r.country} /></td>
                   <td className="px-3 py-2 text-xs">
                     {r.email ? <span className="text-foreground">{r.email}</span> : <span className="text-muted-foreground">anonim</span>}
                   </td>
@@ -173,7 +197,7 @@ function LiveVisitors() {
             ))}
             {rows.length === 0 && !loading && (
               <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-xs text-muted-foreground">
+                <td colSpan={7} className="px-3 py-6 text-center text-xs text-muted-foreground">
                   Son {minutes} dakikada ziyaretçi yok.
                 </td>
               </tr>
@@ -323,7 +347,8 @@ interface ApiStatsResp {
   topEndpoints: Array<{ path: string; method: string; calls: number; avg_ms: number; errors: number }>;
   topFunds: Array<{ fund_code: string; calls: number; unique_ips: number }>;
   statusDist: Array<{ status: number; c: number }>;
-  topIps: Array<{ ip: string; calls: number; errors: number; user_agent: string | null }>;
+  topIps: Array<{ ip: string; calls: number; errors: number; user_agent: string | null; country: string | null }>;
+  topCountries?: Array<{ country: string; calls: number; unique_ips: number }>;
 }
 
 function ApiStats() {
@@ -424,7 +449,9 @@ function ApiStats() {
             <tbody>
               {(data?.topIps ?? []).map((ip) => (
                 <tr key={ip.ip} className="border-t border-border/40">
-                  <td className="px-3 py-1.5 font-mono text-xs">{ip.ip}</td>
+                  <td className="px-3 py-1.5 font-mono text-xs">
+                    <span className="mr-2">{flagEmoji(ip.country) ?? ''}</span>{ip.ip}
+                  </td>
                   <td className="px-3 py-1.5 text-right text-xs">{ip.calls}</td>
                   <td className={cn('px-3 py-1.5 text-right text-xs', ip.errors > 0 && 'text-rose-400')}>
                     {ip.errors > 0 ? `${ip.errors} hata` : '—'}
@@ -435,6 +462,31 @@ function ApiStats() {
             </tbody>
           </table>
         </div>
+        <div className="rounded-lg border border-border/60">
+          <div className="border-b border-border/40 bg-muted/20 px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">
+            Ülke dağılımı
+          </div>
+          <table className="w-full text-sm">
+            <tbody>
+              {(data?.topCountries ?? []).map((c) => (
+                <tr key={c.country} className="border-t border-border/40">
+                  <td className="px-3 py-1.5 text-sm">
+                    <span className="mr-2 text-base">{flagEmoji(c.country) ?? '🌐'}</span>
+                    <span className="font-mono text-xs text-muted-foreground">{c.country}</span>
+                  </td>
+                  <td className="px-3 py-1.5 text-right text-xs">{c.calls}</td>
+                  <td className="px-3 py-1.5 text-right text-xs text-muted-foreground">{c.unique_ips} IP</td>
+                </tr>
+              ))}
+              {(data?.topCountries ?? []).length === 0 && (
+                <tr>
+                  <td className="px-3 py-4 text-center text-xs text-muted-foreground">Ülke verisi yok</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
         <div className="rounded-lg border border-border/60">
           <div className="border-b border-border/40 bg-muted/20 px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">
             HTTP status dağılımı

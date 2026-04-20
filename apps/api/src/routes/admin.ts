@@ -502,7 +502,8 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
                 COUNT(*) as pageviews,
                 (SELECT path FROM page_visits WHERE ip = v.ip AND ts >= ? ORDER BY ts DESC LIMIT 1) as last_path,
                 (SELECT referer FROM page_visits WHERE ip = v.ip AND ts >= ? ORDER BY ts DESC LIMIT 1) as last_referer,
-                (SELECT user_agent FROM page_visits WHERE ip = v.ip AND ts >= ? ORDER BY ts DESC LIMIT 1) as user_agent
+                (SELECT user_agent FROM page_visits WHERE ip = v.ip AND ts >= ? ORDER BY ts DESC LIMIT 1) as user_agent,
+                (SELECT country FROM page_visits WHERE ip = v.ip AND country IS NOT NULL ORDER BY ts DESC LIMIT 1) as country
          FROM page_visits v
          LEFT JOIN users u ON u.id = v.user_id
          WHERE v.ts >= ?
@@ -608,7 +609,8 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
       .prepare(
         `SELECT ip, COUNT(*) as calls,
                 SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors,
-                (SELECT user_agent FROM api_requests WHERE ip = r.ip ORDER BY ts DESC LIMIT 1) as user_agent
+                (SELECT user_agent FROM api_requests WHERE ip = r.ip ORDER BY ts DESC LIMIT 1) as user_agent,
+                (SELECT country FROM api_requests WHERE ip = r.ip AND country IS NOT NULL ORDER BY ts DESC LIMIT 1) as country
          FROM api_requests r
          WHERE ts >= ? AND ip IS NOT NULL
          GROUP BY ip
@@ -625,7 +627,17 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
          FROM api_requests WHERE ts >= ?`,
       )
       .get(cutoff) as { calls: number; avg_ms: number; errors: number; unique_ips: number };
-    return { windowHours: windowMs / 3_600_000, totals, topEndpoints, topFunds, statusDist, topIps };
+    const topCountries = db
+      .prepare(
+        `SELECT country, COUNT(*) as calls, COUNT(DISTINCT ip) as unique_ips
+         FROM api_requests
+         WHERE ts >= ? AND country IS NOT NULL
+         GROUP BY country
+         ORDER BY calls DESC
+         LIMIT 15`,
+      )
+      .all(cutoff);
+    return { windowHours: windowMs / 3_600_000, totals, topEndpoints, topFunds, statusDist, topIps, topCountries };
   });
 
   // Giden mail'lerin kopyaları (admin panelde görünür).

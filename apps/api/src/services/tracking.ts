@@ -14,6 +14,7 @@ interface ApiRequestRow {
   path: string;
   method: string;
   ip: string | null;
+  country: string | null;
   userId: number | null;
   apiKeyId: number | null;
   status: number | null;
@@ -24,14 +25,15 @@ interface ApiRequestRow {
 export function logApiRequest(db: Database, row: ApiRequestRow): void {
   try {
     db.prepare(
-      `INSERT INTO api_requests (ts, path, method, fund_code, ip, user_id, api_key_id, status, duration_ms, user_agent)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO api_requests (ts, path, method, fund_code, ip, country, user_id, api_key_id, status, duration_ms, user_agent)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       Date.now(),
       row.path,
       row.method,
       extractFundCode(row.path),
       row.ip,
+      row.country,
       row.userId,
       row.apiKeyId,
       row.status,
@@ -46,6 +48,7 @@ export function logApiRequest(db: Database, row: ApiRequestRow): void {
 interface PageVisitRow {
   path: string;
   ip: string;
+  country: string | null;
   userId: number | null;
   userAgent: string | null;
   referer: string | null;
@@ -55,12 +58,13 @@ interface PageVisitRow {
 export function logPageVisit(db: Database, row: PageVisitRow): void {
   try {
     db.prepare(
-      `INSERT INTO page_visits (ts, path, ip, user_id, user_agent, referer, session_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO page_visits (ts, path, ip, country, user_id, user_agent, referer, session_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       Date.now(),
       row.path,
       row.ip,
+      row.country,
       row.userId,
       row.userAgent,
       row.referer,
