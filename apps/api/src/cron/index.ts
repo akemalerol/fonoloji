@@ -37,6 +37,8 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
   };
 
   // TEFAS ingest — weekdays only (Pzt-Cum). Weekend'de yeni fiyat yayınlanmıyor.
+  // Sabah saatleri: önceki iş gününün gecikmeli verilerini yakalar.
+  // Akşam saatleri: aynı günün verileri ~18:30 sonrası TEFAS'a çıkar.
   const schedule: Array<{ expr: string; label: string }> = [
     { expr: '0 7 * * 1-5',  label: '07:00' },
     { expr: '0 8 * * 1-5',  label: '08:00' },
@@ -46,11 +48,33 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
     { expr: '0 10 * * 1-5', label: '10:00' },
     { expr: '0 11 * * 1-5', label: '11:00' },
     { expr: '0 12 * * 1-5', label: '12:00' },
+    { expr: '45 18 * * 1-5', label: '18:45' },
+    { expr: '30 19 * * 1-5', label: '19:30' },
+    { expr: '30 20 * * 1-5', label: '20:30' },
+    { expr: '30 22 * * 1-5', label: '22:30' },
   ];
 
   for (const { expr, label } of schedule) {
     cron.schedule(expr, () => run(label), { timezone: 'Europe/Istanbul' });
   }
+
+  // Günlük sağlık kontrolü — 23:45 (Pzt-Cum). Bugünün verisi DB'de yoksa alert.
+  cron.schedule('45 23 * * 1-5', async () => {
+    try {
+      const db = getDb();
+      const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Istanbul' }); // YYYY-MM-DD
+      const row = db
+        .prepare(`SELECT COUNT(*) as c FROM prices WHERE date = ?`)
+        .get(today) as { c: number };
+      if (row.c === 0) {
+        log.error(`[cron] SAĞLIK UYARISI: ${today} için hiç fiyat yok! VPN ve TEFAS erişimini kontrol et.`);
+      } else {
+        log.info(`[cron] sağlık: ${today} → ${row.c} fiyat OK`);
+      }
+    } catch (err) {
+      log.error('[cron] sağlık kontrolü hatası:', err);
+    }
+  }, { timezone: 'Europe/Istanbul' });
 
   // Seed upcoming TÜFE announcements on boot so UI can show next date
   try {
