@@ -621,7 +621,7 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
   app.get('/live-visitors', async (req) => {
     const db = getDb();
     const { minutes = '5' } = req.query as { minutes?: string };
-    const windowMs = Math.max(1, Math.min(60, Number(minutes) || 5)) * 60_000;
+    const windowMs = Math.max(1, Math.min(1440, Number(minutes) || 5)) * 60_000;
     const cutoff = Date.now() - windowMs;
     const rows = db
       .prepare(
@@ -775,7 +775,40 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
          LIMIT 15`,
       )
       .all(cutoff);
-    return { windowHours: windowMs / 3_600_000, totals, topEndpoints, topFunds, statusDist, topIps, ipPagination, topCountries };
+    // Hangi sitelerden API çağrısı geldi (Origin) — sitemiz değilse dış entegrasyon var demektir
+    const topOrigins = db
+      .prepare(
+        `SELECT origin, COUNT(*) as calls, COUNT(DISTINCT ip) as unique_ips
+         FROM api_requests
+         WHERE ts >= ? AND origin IS NOT NULL AND origin != ''
+         GROUP BY origin
+         ORDER BY calls DESC
+         LIMIT 20`,
+      )
+      .all(cutoff);
+    // Top referer (tam URL)
+    const topReferers = db
+      .prepare(
+        `SELECT referer, COUNT(*) as calls
+         FROM api_requests
+         WHERE ts >= ? AND referer IS NOT NULL AND referer != ''
+         GROUP BY referer
+         ORDER BY calls DESC
+         LIMIT 20`,
+      )
+      .all(cutoff);
+    return {
+      windowHours: windowMs / 3_600_000,
+      totals,
+      topEndpoints,
+      topFunds,
+      statusDist,
+      topIps,
+      ipPagination,
+      topCountries,
+      topOrigins,
+      topReferers,
+    };
   });
 
   // IP detay drill-down: seçili IP'nin son N saatte ne yaptığı —
@@ -820,9 +853,24 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
     // Son 100 istek (chronological tail) — gerçek kullanım paterni
     const recent = db
       .prepare(
-        `SELECT ts, method, path, fund_code, status, duration_ms, api_key_id, user_id
+        `SELECT ts, method, path, fund_code, status, duration_ms, api_key_id, user_id, origin, referer
          FROM api_requests WHERE ip = ? AND ts >= ?
          ORDER BY ts DESC LIMIT 100`,
+      )
+      .all(ip, cutoff);
+    // Bu IP hangi sitelerden arıyor?
+    const topOrigins = db
+      .prepare(
+        `SELECT origin, COUNT(*) as calls FROM api_requests
+         WHERE ip = ? AND ts >= ? AND origin IS NOT NULL AND origin != ''
+         GROUP BY origin ORDER BY calls DESC LIMIT 10`,
+      )
+      .all(ip, cutoff);
+    const topReferers = db
+      .prepare(
+        `SELECT referer, COUNT(*) as calls FROM api_requests
+         WHERE ip = ? AND ts >= ? AND referer IS NOT NULL AND referer != ''
+         GROUP BY referer ORDER BY calls DESC LIMIT 10`,
       )
       .all(ip, cutoff);
     // Varsa bağlı kullanıcı / API key bilgisi
@@ -844,7 +892,7 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
       )
       .all(ip, cutoff);
 
-    return { ip, hours: h, totals, topEndpoints, topFunds, recent, linkedUser, linkedKeys };
+    return { ip, hours: h, totals, topEndpoints, topFunds, recent, linkedUser, linkedKeys, topOrigins, topReferers };
   });
 
   // Giden mail'lerin kopyaları (admin panelde görünür).

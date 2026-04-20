@@ -38,11 +38,32 @@ await app.register(helmet, {
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", 'https://www.googletagmanager.com', 'https://www.google-analytics.com'],
+      scriptSrc: [
+        "'self'",
+        "'unsafe-inline'",
+        'https://www.googletagmanager.com',
+        'https://www.google-analytics.com',
+        'https://pagead2.googlesyndication.com',
+        'https://*.googlesyndication.com',
+        'https://*.doubleclick.net',
+        'https://*.googleadservices.com',
+      ],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:', 'https:'],
       fontSrc: ["'self'", 'data:'],
-      connectSrc: ["'self'", 'https://www.google-analytics.com', 'https://region1.google-analytics.com'],
+      frameSrc: [
+        "'self'",
+        'https://googleads.g.doubleclick.net',
+        'https://*.doubleclick.net',
+        'https://*.googlesyndication.com',
+      ],
+      connectSrc: [
+        "'self'",
+        'https://www.google-analytics.com',
+        'https://region1.google-analytics.com',
+        'https://*.googlesyndication.com',
+        'https://*.doubleclick.net',
+      ],
       frameAncestors: ["'none'"],
       baseUri: ["'self'"],
       formAction: ["'self'"],
@@ -116,6 +137,10 @@ app.addHook('onResponse', async (req, reply) => {
     const apiKeyId = (req as unknown as { apiKey?: { id: number } }).apiKey?.id ?? null;
     const userId = (req as unknown as { user?: { sub: number } }).user?.sub ?? null;
     const cfCountry = (req.headers['cf-ipcountry'] as string) ?? null;
+    const origin = (req.headers['origin'] as string) ?? null;
+    const refererRaw = (req.headers['referer'] as string) ?? null;
+    // Referer'i 300 karakterden sonra kırp — uzun query string'li URL'ler DB'yi şişirmesin
+    const referer = refererRaw && refererRaw.length > 300 ? refererRaw.slice(0, 300) : refererRaw;
     logApiRequest(db, {
       path,
       method: req.method,
@@ -126,6 +151,8 @@ app.addHook('onResponse', async (req, reply) => {
       status: reply.statusCode,
       durationMs: Math.round(reply.elapsedTime),
       userAgent: (req.headers['user-agent'] as string) ?? null,
+      origin,
+      referer,
     });
   } catch {
     // tracking hatası response'u engellemesin

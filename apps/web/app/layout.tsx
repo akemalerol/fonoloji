@@ -9,6 +9,7 @@ import { PageTracker } from '@/components/site/page-tracker';
 import '@/app/globals.css';
 
 const GA_ID = 'G-SQXZ5GHZS1';
+const ADSENSE_CLIENT = 'ca-pub-9557533039186947';
 
 // Display font — only weight 400 (regular + italic). Preloaded because hero uses it.
 const serif = Fraunces({
@@ -184,6 +185,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             gtag('config', '${GA_ID}', { anonymize_ip: true });
           `}
         </Script>
+        <Script
+          id="adsense"
+          async
+          strategy="afterInteractive"
+          src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADSENSE_CLIENT}`}
+          crossOrigin="anonymous"
+        />
       </body>
     </html>
   );

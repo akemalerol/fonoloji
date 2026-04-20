@@ -20,13 +20,15 @@ interface ApiRequestRow {
   status: number | null;
   durationMs: number | null;
   userAgent: string | null;
+  origin: string | null;
+  referer: string | null;
 }
 
 export function logApiRequest(db: Database, row: ApiRequestRow): void {
   try {
     db.prepare(
-      `INSERT INTO api_requests (ts, path, method, fund_code, ip, country, user_id, api_key_id, status, duration_ms, user_agent)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO api_requests (ts, path, method, fund_code, ip, country, user_id, api_key_id, status, duration_ms, user_agent, origin, referer)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       Date.now(),
       row.path,
@@ -39,6 +41,8 @@ export function logApiRequest(db: Database, row: ApiRequestRow): void {
       row.status,
       row.durationMs,
       row.userAgent,
+      row.origin,
+      row.referer,
     );
   } catch {
     // tracking tablosu yazımı site performansını düşürmemeli — sessizce yut

@@ -343,8 +343,8 @@ function TimelineChart() {
     <div className="rounded-xl border border-border/60 bg-card/40 p-4">
       <div className="mb-3 flex items-center gap-3">
         <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Trafik Zaman Çizelgesi</div>
-        <div className="ml-auto flex gap-1">
-          {[6, 24, 168].map((h) => (
+        <div className="ml-auto flex flex-wrap gap-1">
+          {[1, 2, 5, 12, 24, 168].map((h) => (
             <button
               key={h}
               onClick={() => setHours(h)}
@@ -510,8 +510,8 @@ function LiveVisitors() {
         <div className="text-xs text-muted-foreground">
           {loading ? 'Yükleniyor…' : `${rows.length} benzersiz ziyaretçi · son ${minutes} dk`}
         </div>
-        <div className="ml-auto flex gap-1">
-          {[5, 15, 60].map((m) => (
+        <div className="ml-auto flex flex-wrap gap-1">
+          {[5, 15, 60, 120, 300, 720, 1440].map((m) => (
             <button
               key={m}
               onClick={() => setMinutes(m)}
@@ -520,7 +520,7 @@ function LiveVisitors() {
                 minutes === m ? 'bg-brand-500/20 text-brand-200' : 'bg-muted/30 hover:bg-muted/50',
               )}
             >
-              {m} dk
+              {m < 60 ? `${m} dk` : m === 1440 ? '24 sa' : `${m / 60} sa`}
             </button>
           ))}
           <button onClick={load} className="rounded-md bg-muted/30 px-2 py-1 text-xs hover:bg-muted/50">
@@ -650,8 +650,8 @@ function PageStats() {
         <div className="text-xs text-muted-foreground">
           {loading ? 'Yükleniyor…' : `${data?.totals.views ?? 0} toplam · ${data?.totals.unique_ips ?? 0} benzersiz IP · son ${hours} saat`}
         </div>
-        <div className="ml-auto flex gap-1">
-          {[1, 24, 168].map((h) => (
+        <div className="ml-auto flex flex-wrap gap-1">
+          {[1, 2, 5, 12, 24, 168].map((h) => (
             <button
               key={h}
               onClick={() => setHours(h)}
@@ -660,7 +660,7 @@ function PageStats() {
                 hours === h ? 'bg-brand-500/20 text-brand-200' : 'bg-muted/30 hover:bg-muted/50',
               )}
             >
-              {h === 168 ? '7 gün' : h === 24 ? '24 saat' : '1 saat'}
+              {h === 168 ? '7 gün' : `${h}sa`}
             </button>
           ))}
         </div>
@@ -724,6 +724,8 @@ interface ApiStatsResp {
   topIps: Array<{ ip: string; calls: number; errors: number; user_agent: string | null; country: string | null }>;
   ipPagination?: { page: number; pageSize: number; total: number; pageCount: number };
   topCountries?: Array<{ country: string; calls: number; unique_ips: number }>;
+  topOrigins?: Array<{ origin: string; calls: number; unique_ips: number }>;
+  topReferers?: Array<{ referer: string; calls: number }>;
 }
 
 interface IpDetailResp {
@@ -742,9 +744,11 @@ interface IpDetailResp {
   };
   topEndpoints: Array<{ path: string; method: string; calls: number; avgMs: number; errors: number }>;
   topFunds: Array<{ fund_code: string; calls: number }>;
-  recent: Array<{ ts: number; method: string; path: string; fund_code: string | null; status: number; duration_ms: number; api_key_id: number | null; user_id: number | null }>;
+  recent: Array<{ ts: number; method: string; path: string; fund_code: string | null; status: number; duration_ms: number; api_key_id: number | null; user_id: number | null; origin?: string | null; referer?: string | null }>;
   linkedUser: { id: number; email: string; plan: string; role: string } | null;
   linkedKeys: Array<{ id: number; key_prefix: string; name: string | null; email: string | null }>;
+  topOrigins?: Array<{ origin: string; calls: number }>;
+  topReferers?: Array<{ referer: string; calls: number }>;
 }
 
 function ApiStats() {
@@ -775,8 +779,8 @@ function ApiStats() {
             ? 'Yükleniyor…'
             : `${data?.totals.calls ?? 0} çağrı · ${data?.totals.unique_ips ?? 0} IP · ${data?.totals.errors ?? 0} hata · ort ${Math.round(data?.totals.avg_ms ?? 0)}ms`}
         </div>
-        <div className="ml-auto flex gap-1">
-          {[1, 24, 168].map((h) => (
+        <div className="ml-auto flex flex-wrap gap-1">
+          {[1, 2, 5, 12, 24, 168].map((h) => (
             <button
               key={h}
               onClick={() => setHours(h)}
@@ -785,7 +789,7 @@ function ApiStats() {
                 hours === h ? 'bg-brand-500/20 text-brand-200' : 'bg-muted/30 hover:bg-muted/50',
               )}
             >
-              {h === 168 ? '7 gün' : h === 24 ? '24 saat' : '1 saat'}
+              {h === 168 ? '7 gün' : `${h}sa`}
             </button>
           ))}
         </div>
@@ -925,6 +929,58 @@ function ApiStats() {
             </tbody>
           </table>
         </div>
+
+        {/* Hangi sitelerden API çağrılıyor — Origin header (CORS) */}
+        <div className="rounded-lg border border-border/60 md:col-span-2">
+          <div className="border-b border-border/40 bg-muted/20 px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">
+            API'yi çağıran siteler (Origin)
+          </div>
+          <table className="w-full text-sm">
+            <tbody>
+              {(data?.topOrigins ?? []).map((o) => (
+                <tr key={o.origin} className="border-t border-border/40">
+                  <td className="px-3 py-1.5 text-xs">
+                    <a href={o.origin} target="_blank" rel="noreferrer" className="text-brand-400 hover:underline break-all">
+                      {o.origin}
+                    </a>
+                  </td>
+                  <td className="px-3 py-1.5 text-right text-xs">{o.calls}</td>
+                  <td className="px-3 py-1.5 text-right text-xs text-muted-foreground">{o.unique_ips} IP</td>
+                </tr>
+              ))}
+              {(data?.topOrigins ?? []).length === 0 && (
+                <tr>
+                  <td className="px-3 py-4 text-center text-xs text-muted-foreground">
+                    Harici siteden Origin header'ı ile gelen çağrı yok. (SSR ve terminal istekleri Origin göndermez.)
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Referer — tam URL, harici siteden hangi sayfanın çağırdığı */}
+        {(data?.topReferers ?? []).length > 0 && (
+          <div className="rounded-lg border border-border/60 md:col-span-2">
+            <div className="border-b border-border/40 bg-muted/20 px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">
+              Referer URL'leri — hangi sayfadan çağrı
+            </div>
+            <table className="w-full text-sm">
+              <tbody>
+                {(data?.topReferers ?? []).map((r) => (
+                  <tr key={r.referer} className="border-t border-border/40">
+                    <td className="px-3 py-1.5 text-xs">
+                      <a href={r.referer} target="_blank" rel="noreferrer" className="break-all text-brand-400 hover:underline">
+                        {r.referer}
+                      </a>
+                    </td>
+                    <td className="px-3 py-1.5 text-right text-xs">{r.calls}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         <div className="rounded-lg border border-border/60">
           <div className="border-b border-border/40 bg-muted/20 px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">
