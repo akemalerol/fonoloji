@@ -2,6 +2,7 @@ import { Activity, ArrowUpDown, Flame, Rocket, Shield, Sparkles, TrendingUp, Wav
 import Link from 'next/link';
 import { ChangePill } from '@/components/fx/change-pill';
 import { PortfolioChip } from '@/components/fx/portfolio-chip';
+import { CompanyLogo } from '@/components/site/company-logo';
 import { Badge } from '@/components/ui/badge';
 import { api, type FundRow } from '@/lib/api';
 import { cn, formatCompact, formatPrice, fundTypeLabel } from '@/lib/utils';
@@ -249,11 +250,14 @@ function Row({ fund }: { fund: FundRow }) {
       </td>
       <td className="py-3 pr-3">
         <Link href={`/fon/${fund.code}`} className="block min-w-0">
-          <div className="truncate text-sm leading-tight hover:text-brand-400" title={fund.name}>
-            {fund.name}
+          <div className="flex items-center gap-2">
+            <CompanyLogo company={fund.management_company} size={18} />
+            <div className="truncate text-sm leading-tight hover:text-brand-400" title={fund.name}>
+              {fund.name}
+            </div>
           </div>
           {fund.category && (
-            <div className="mt-0.5 truncate text-[11px] text-muted-foreground" title={fund.category}>
+            <div className="mt-0.5 truncate pl-6 text-[11px] text-muted-foreground" title={fund.category}>
               {fund.category}
             </div>
           )}

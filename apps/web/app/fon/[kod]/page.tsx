@@ -1,6 +1,7 @@
 import { Activity, ArrowRight, Calendar, ExternalLink, Shield, Sparkles, TrendingDown, TrendingUp, Users, Wallet } from 'lucide-react';
 import { ShareButton } from '@/components/site/share-button';
 import { RecordRecentFund } from '@/components/site/recently-viewed';
+import { CompanyLogo } from '@/components/site/company-logo';
 import { KapDisclosuresCard } from './kap-disclosures-card';
 import { PercentileBadges } from './percentile-badges';
 import { SocialProof } from './social-proof';
@@ -177,8 +178,9 @@ export default async function FundDetailPage({
               {fund.type && <Badge variant="muted">{fundTypeLabel(fund.type)}</Badge>}
               {fund.category && <Badge variant="muted">{fund.category}</Badge>}
               {fund.management_company && (
-                <span className="max-w-full truncate" title={fund.management_company}>
-                  · {fund.management_company}
+                <span className="inline-flex max-w-full items-center gap-1.5 truncate" title={fund.management_company}>
+                  · <CompanyLogo company={fund.management_company} size={16} />
+                  {fund.management_company}
                 </span>
               )}
             </div>

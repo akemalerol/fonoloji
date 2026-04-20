@@ -1,5 +1,6 @@
 import { Archive } from 'lucide-react';
 import Link from 'next/link';
+import { CompanyLogo } from '@/components/site/company-logo';
 import { formatCompact } from '@/lib/utils';
 
 export const metadata = {
@@ -82,8 +83,11 @@ export default async function ArsivPage() {
                 {f.code}
               </div>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm">{f.name}</div>
-                <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <CompanyLogo company={f.management_company} size={18} />
+                  <span className="truncate text-sm">{f.name}</span>
+                </div>
+                <div className="mt-0.5 flex flex-wrap items-center gap-2 pl-6 text-[11px] text-muted-foreground">
                   {f.management_company && <span>{f.management_company}</span>}
                   {f.category && <><span>·</span><span>{f.category}</span></>}
                   {f.trading_status && <><span>·</span><span className="text-amber-300">{f.trading_status.slice(0, 40)}</span></>}
