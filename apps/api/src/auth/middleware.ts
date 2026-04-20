@@ -51,6 +51,10 @@ export async function requireApiKey(req: FastifyRequest, reply: FastifyReply): P
     reply.code(401).send({ error: 'Anahtara bağlı kullanıcı bulunamadı.' });
     return;
   }
+  if (user.disabled_at) {
+    reply.code(403).send({ error: 'Hesap pasife alınmış. İletişim: /iletisim' });
+    return;
+  }
 
   const plan = planFor(user.plan);
   // Per-user overrides win over plan defaults.

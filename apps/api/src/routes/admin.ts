@@ -90,7 +90,8 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
 
     const rows = db
       .prepare(
-        `SELECT u.id, u.email, u.name, u.plan, u.role, u.created_at, u.email_verified_at,
+        `SELECT u.id, u.email, u.name, u.plan, u.role, u.created_at,
+                u.email_verified_at, u.disabled_at,
                 u.custom_monthly_quota, u.custom_daily_quota, u.custom_rpm, u.limit_note,
                 (SELECT COUNT(*) FROM api_keys k WHERE k.user_id = u.id AND k.revoked_at IS NULL) as key_count,
                 (SELECT COALESCE(SUM(uc.count), 0) FROM usage_counters uc
