@@ -1,6 +1,46 @@
 import { Resend } from 'resend';
+import { getDb } from '../db/index.js';
+import { logOutgoingEmail } from './tracking.js';
 
 let _resend: Resend | null = null;
+
+// Resend çağrısını wrap'ler: gönderim sonucunu outgoing_emails tablosuna logla.
+async function sendAndLog(args: {
+  resend: Resend;
+  template: string;
+  userId?: number | null;
+  payload: Parameters<Resend['emails']['send']>[0];
+}): Promise<{ ok: boolean; error?: string }> {
+  let ok = false;
+  let error: string | undefined;
+  try {
+    const res = await args.resend.emails.send(args.payload);
+    if (res.error) {
+      error = res.error.message;
+    } else {
+      ok = true;
+    }
+  } catch (err) {
+    error = (err as Error).message;
+  }
+
+  try {
+    const to = Array.isArray(args.payload.to) ? args.payload.to[0] : args.payload.to;
+    logOutgoingEmail(getDb(), {
+      toEmail: String(to ?? ''),
+      subject: args.payload.subject ?? '',
+      template: args.template,
+      bodyHtml: 'html' in args.payload ? (args.payload.html as string) : null,
+      status: ok ? 'sent' : 'failed',
+      error: error ?? null,
+      userId: args.userId ?? null,
+    });
+  } catch {
+    /* noop */
+  }
+
+  return { ok, error };
+}
 
 function getResend(): Resend | null {
   const key = process.env.RESEND_API_KEY;
@@ -41,20 +81,19 @@ export async function sendVerificationEmail(
   const html = verificationTemplate(firstName, code);
   const text = `Fonoloji'ye hoş geldin ${firstName}!\n\nHesabını aktif etmek için 6 haneli kod: ${code}\n\nKod 10 dakika içinde geçersiz olur.\n\nFonoloji\n${SITE_URL}`;
 
-  try {
-    const res = await resend.emails.send({
+  const result = await sendAndLog({
+    resend,
+    template: 'verification',
+    payload: {
       from: FROM_EMAIL,
       to,
       subject: `Fonoloji doğrulama kodu: ${code}`,
       html,
       text,
       replyTo: process.env.FONOLOJI_REPLY_TO,
-    });
-    if (res.error) return { ok: false, error: res.error.message };
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: (err as Error).message };
-  }
+    },
+  });
+  return result;
 }
 
 export async function sendContactNotification(
@@ -70,20 +109,18 @@ export async function sendContactNotification(
   const html = contactTemplate(data);
   const text = `Yeni iletişim mesajı\n\n${data.fullName} <${data.email}>\nKonu: ${data.subject}\n\n${data.message}`;
 
-  try {
-    const res = await resend.emails.send({
+  return sendAndLog({
+    resend,
+    template: 'contact-notification',
+    payload: {
       from: FROM_EMAIL,
       to: adminEmail,
       subject: `[Fonoloji] ${data.subject}`,
       html,
       text,
       replyTo: data.email,
-    });
-    if (res.error) return { ok: false, error: res.error.message };
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: (err as Error).message };
-  }
+    },
+  });
 }
 
 const FROM_MAP: Record<string, string> = {
@@ -122,20 +159,18 @@ export async function sendAdminBroadcast(args: {
   for (let i = 0; i < args.to.length; i += BATCH) {
     const chunk = args.to.slice(i, i + BATCH);
     const results = await Promise.all(
-      chunk.map(async (addr) => {
-        try {
-          const res = await resend.emails.send({
+      chunk.map((addr) =>
+        sendAndLog({
+          resend,
+          template: 'admin-broadcast',
+          payload: {
             from: fromAddr,
             to: addr,
             subject: args.subject,
             ...sendArgs,
-          });
-          if (res.error) return { ok: false, error: res.error.message };
-          return { ok: true };
-        } catch (err) {
-          return { ok: false, error: (err as Error).message };
-        }
-      }),
+          },
+        }),
+      ),
     );
     for (const r of results) {
       if (r.ok) sent++;
@@ -216,20 +251,18 @@ export async function sendContactReply(
   const html = replyTemplate(data);
   const text = `${data.body}\n\n\n---\nİlk mesajın:\n\nKonu: ${data.originalSubject}\n\n${data.originalMessage}\n\n---\nFonoloji · ${SITE_URL}`;
 
-  try {
-    const res = await resend.emails.send({
+  return sendAndLog({
+    resend,
+    template: 'contact-reply',
+    payload: {
       from: FROM_EMAIL,
       to,
       subject: data.subject,
       html,
       text,
       replyTo: process.env.FONOLOJI_REPLY_TO,
-    });
-    if (res.error) return { ok: false, error: res.error.message };
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: (err as Error).message };
-  }
+    },
+  });
 }
 
 function verificationTemplate(firstName: string, code: string): string {

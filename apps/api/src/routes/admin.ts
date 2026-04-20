@@ -483,4 +483,189 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
     const r = db.prepare(`DELETE FROM x_posts WHERE id = ? AND status != 'sent'`).run(id);
     return reply.code(r.changes > 0 ? 200 : 404).send({ ok: r.changes > 0 });
   });
+
+  // === Observability: canlı ziyaretçi + analitik + mail logu ===
+
+  // Son N dakikada aktif IP'ler ve en son baktığı sayfa.
+  // Default: 5 dk. Her IP için: son path, son ts, toplam pageview, userId varsa email.
+  app.get('/live-visitors', async (req) => {
+    const db = getDb();
+    const { minutes = '5' } = req.query as { minutes?: string };
+    const windowMs = Math.max(1, Math.min(60, Number(minutes) || 5)) * 60_000;
+    const cutoff = Date.now() - windowMs;
+    const rows = db
+      .prepare(
+        `SELECT v.ip,
+                v.user_id,
+                u.email,
+                MAX(v.ts) as last_ts,
+                COUNT(*) as pageviews,
+                (SELECT path FROM page_visits WHERE ip = v.ip AND ts >= ? ORDER BY ts DESC LIMIT 1) as last_path,
+                (SELECT referer FROM page_visits WHERE ip = v.ip AND ts >= ? ORDER BY ts DESC LIMIT 1) as last_referer,
+                (SELECT user_agent FROM page_visits WHERE ip = v.ip AND ts >= ? ORDER BY ts DESC LIMIT 1) as user_agent
+         FROM page_visits v
+         LEFT JOIN users u ON u.id = v.user_id
+         WHERE v.ts >= ?
+         GROUP BY v.ip
+         ORDER BY last_ts DESC
+         LIMIT 200`,
+      )
+      .all(cutoff, cutoff, cutoff, cutoff);
+    return { items: rows, windowMinutes: windowMs / 60_000 };
+  });
+
+  // Seçili IP'nin son N ziyaret path'i (drill-down).
+  app.get('/visitor-trail', async (req, reply) => {
+    const { ip, limit = '50' } = req.query as { ip?: string; limit?: string };
+    if (!ip) return reply.code(400).send({ error: 'ip zorunlu' });
+    const db = getDb();
+    const rows = db
+      .prepare(
+        `SELECT ts, path, referer, user_agent, session_id
+         FROM page_visits
+         WHERE ip = ?
+         ORDER BY ts DESC
+         LIMIT ?`,
+      )
+      .all(ip, Math.min(Math.max(Number(limit) || 50, 1), 500));
+    return { ip, items: rows };
+  });
+
+  // Sayfa ziyaret özeti: son N saatte en popüler path'ler.
+  app.get('/page-stats', async (req) => {
+    const { hours = '24' } = req.query as { hours?: string };
+    const windowMs = Math.max(1, Math.min(720, Number(hours) || 24)) * 3_600_000;
+    const cutoff = Date.now() - windowMs;
+    const db = getDb();
+    const topPaths = db
+      .prepare(
+        `SELECT path, COUNT(*) as views, COUNT(DISTINCT ip) as unique_ips
+         FROM page_visits
+         WHERE ts >= ?
+         GROUP BY path
+         ORDER BY views DESC
+         LIMIT 50`,
+      )
+      .all(cutoff);
+    const topReferers = db
+      .prepare(
+        `SELECT referer, COUNT(*) as c
+         FROM page_visits
+         WHERE ts >= ? AND referer IS NOT NULL AND referer != ''
+         GROUP BY referer
+         ORDER BY c DESC
+         LIMIT 20`,
+      )
+      .all(cutoff);
+    const totals = db
+      .prepare(
+        `SELECT COUNT(*) as views, COUNT(DISTINCT ip) as unique_ips
+         FROM page_visits WHERE ts >= ?`,
+      )
+      .get(cutoff) as { views: number; unique_ips: number };
+    return { windowHours: windowMs / 3_600_000, totals, topPaths, topReferers };
+  });
+
+  // API çağrı analitiği: endpoint, status, top funds, top IP.
+  app.get('/api-stats', async (req) => {
+    const { hours = '24' } = req.query as { hours?: string };
+    const windowMs = Math.max(1, Math.min(720, Number(hours) || 24)) * 3_600_000;
+    const cutoff = Date.now() - windowMs;
+    const db = getDb();
+    const topEndpoints = db
+      .prepare(
+        `SELECT path, method, COUNT(*) as calls,
+                AVG(duration_ms) as avg_ms,
+                SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors
+         FROM api_requests
+         WHERE ts >= ?
+         GROUP BY path, method
+         ORDER BY calls DESC
+         LIMIT 40`,
+      )
+      .all(cutoff);
+    const topFunds = db
+      .prepare(
+        `SELECT fund_code, COUNT(*) as calls,
+                COUNT(DISTINCT ip) as unique_ips
+         FROM api_requests
+         WHERE ts >= ? AND fund_code IS NOT NULL
+         GROUP BY fund_code
+         ORDER BY calls DESC
+         LIMIT 30`,
+      )
+      .all(cutoff);
+    const statusDist = db
+      .prepare(
+        `SELECT status, COUNT(*) as c
+         FROM api_requests
+         WHERE ts >= ?
+         GROUP BY status
+         ORDER BY c DESC`,
+      )
+      .all(cutoff);
+    const topIps = db
+      .prepare(
+        `SELECT ip, COUNT(*) as calls,
+                SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors,
+                (SELECT user_agent FROM api_requests WHERE ip = r.ip ORDER BY ts DESC LIMIT 1) as user_agent
+         FROM api_requests r
+         WHERE ts >= ? AND ip IS NOT NULL
+         GROUP BY ip
+         ORDER BY calls DESC
+         LIMIT 20`,
+      )
+      .all(cutoff);
+    const totals = db
+      .prepare(
+        `SELECT COUNT(*) as calls,
+                AVG(duration_ms) as avg_ms,
+                SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors,
+                COUNT(DISTINCT ip) as unique_ips
+         FROM api_requests WHERE ts >= ?`,
+      )
+      .get(cutoff) as { calls: number; avg_ms: number; errors: number; unique_ips: number };
+    return { windowHours: windowMs / 3_600_000, totals, topEndpoints, topFunds, statusDist, topIps };
+  });
+
+  // Giden mail'lerin kopyaları (admin panelde görünür).
+  app.get('/mail-log', async (req) => {
+    const { limit = '100', q = '', template = '' } = req.query as {
+      limit?: string;
+      q?: string;
+      template?: string;
+    };
+    const db = getDb();
+    const params: unknown[] = [];
+    const where: string[] = [];
+    if (q) {
+      where.push(`(to_email LIKE ? OR subject LIKE ?)`);
+      params.push(`%${q}%`, `%${q}%`);
+    }
+    if (template) {
+      where.push(`template = ?`);
+      params.push(template);
+    }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const rows = db
+      .prepare(
+        `SELECT id, ts, to_email, subject, template, body_preview, status, error, user_id
+         FROM outgoing_emails
+         ${whereSql}
+         ORDER BY ts DESC
+         LIMIT ?`,
+      )
+      .all(...params, Math.min(Math.max(Number(limit) || 100, 1), 500));
+    return { items: rows };
+  });
+
+  // Tek mail detayı — full HTML body göstermek için.
+  app.get('/mail-log/:id', async (req, reply) => {
+    const id = Number((req.params as { id: string }).id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: 'id' });
+    const db = getDb();
+    const row = db.prepare(`SELECT * FROM outgoing_emails WHERE id = ?`).get(id);
+    if (!row) return reply.code(404).send({ error: 'bulunamadı' });
+    return row;
+  });
 };

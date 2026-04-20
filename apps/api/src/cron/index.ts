@@ -14,6 +14,7 @@ import { runKapDisclosuresIngest } from '../scripts/ingestKapDisclosures.js';
 import { runEstimates, verifyEstimates } from '../scripts/navEstimateDaily.js';
 import { runPortfolioIngest } from '../scripts/ingestPortfolio.js';
 import { runAlertChecker, runFundChangeDetector, runPeriodSummary, runWatchlistDigest, runWeeklyDigest } from './alerts.js';
+import { purgeOldTracking } from '../services/tracking.js';
 
 export function registerCron(log: { info: (msg: string) => void; error: (...args: unknown[]) => void }): void {
   if (process.env.FONOLOJI_DISABLE_CRON === '1') {
@@ -57,6 +58,16 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
   for (const { expr, label } of schedule) {
     cron.schedule(expr, () => run(label), { timezone: 'Europe/Istanbul' });
   }
+
+  // Observability tabloları — her gün 03:30'da 30+ günlük kayıtları sil.
+  cron.schedule('30 3 * * *', () => {
+    try {
+      const r = purgeOldTracking(getDb(), 30);
+      if (r.deleted > 0) log.info(`[cron] tracking purge: ${r.deleted} eski kayıt silindi`);
+    } catch (err) {
+      log.error('[cron] tracking purge hata:', err);
+    }
+  }, { timezone: 'Europe/Istanbul' });
 
   // Günlük sağlık kontrolü — 23:45 (Pzt-Cum). Bugünün verisi DB'de yoksa alert.
   cron.schedule('45 23 * * 1-5', async () => {

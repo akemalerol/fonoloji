@@ -14,6 +14,8 @@ import { contactRoute } from './routes/contact.js';
 import { fundsRoute } from './routes/funds.js';
 import { insightsRoute } from './routes/insights.js';
 import { portfolioRoute } from './routes/portfolio.js';
+import { trackRoute } from './routes/track.js';
+import { logApiRequest } from './services/tracking.js';
 
 const app = Fastify({
   logger: { transport: { target: 'pino-pretty' } },
@@ -79,6 +81,53 @@ await app.register(cookie, {
 });
 await app.register(jwt, {
   secret: jwtSecret ?? 'fonoloji-dev-jwt-secret-change-me',
+});
+
+// Observability: /api/*, /v1/*, /admin-api/* çağrılarının request/response
+// meta'sını api_requests tablosuna yaz. Analytics + admin paneli için.
+function getClientIp(req: { headers: Record<string, string | string[] | undefined>; ip: string }): string {
+  return (
+    (req.headers['cf-connecting-ip'] as string) ||
+    (req.headers['x-real-ip'] as string) ||
+    ((req.headers['x-forwarded-for'] as string) ?? '').split(',')[0]?.trim() ||
+    req.ip ||
+    'unknown'
+  );
+}
+
+app.addHook('onResponse', async (req, reply) => {
+  const url = req.url;
+  // Sadece public/auth API yollarını logla. Static/health gürültüsünü at.
+  if (
+    !url.startsWith('/api/') &&
+    !url.startsWith('/v1/') &&
+    !url.startsWith('/admin-api/') &&
+    !url.startsWith('/auth/')
+  ) {
+    return;
+  }
+  if (url.startsWith('/api/health')) return;
+  if (url.startsWith('/api/track')) return; // beacon'un kendisini loglama (sonsuz döngü)
+
+  try {
+    const db = getDb();
+    const path = url.split('?')[0] ?? url;
+    // API-key ise req.apiKey plugin'den gelir; user ise JWT'den çözülür
+    const apiKeyId = (req as unknown as { apiKey?: { id: number } }).apiKey?.id ?? null;
+    const userId = (req as unknown as { user?: { sub: number } }).user?.sub ?? null;
+    logApiRequest(db, {
+      path,
+      method: req.method,
+      ip: getClientIp(req),
+      userId,
+      apiKeyId,
+      status: reply.statusCode,
+      durationMs: Math.round(reply.elapsedTime),
+      userAgent: (req.headers['user-agent'] as string) ?? null,
+    });
+  } catch {
+    // tracking hatası response'u engellemesin
+  }
 });
 
 // Internal /api/* (cookie auth opsiyonel — Next.js SSR ve tarayıcı çağrıları).
@@ -184,6 +233,9 @@ await app.register(authRoute, { prefix: '/auth' });
 
 // Portfolio / alerts (user-owned, cookie auth)
 await app.register(portfolioRoute, { prefix: '/api' });
+
+// Tracking beacon — UA blocklist ve rate-limit dışında; her sayfa ziyareti yazar
+await app.register(trackRoute, { prefix: '/api' });
 
 // Admin routes at /admin-api/* (cookie-based, role=admin).
 await app.register(adminRoute, { prefix: '/admin-api' });

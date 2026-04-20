@@ -5,6 +5,7 @@ import Script from 'next/script';
 import { DisclaimerBanner } from '@/components/site/disclaimer-banner';
 import { SiteFooter } from '@/components/site/footer';
 import { SiteHeader } from '@/components/site/header';
+import { PageTracker } from '@/components/site/page-tracker';
 import '@/app/globals.css';
 
 const GA_ID = 'G-SQXZ5GHZS1';
@@ -170,6 +171,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <SiteHeader />
         <main className="animate-fade-in">{children}</main>
         <SiteFooter />
+        <PageTracker />
         <Script
           strategy="afterInteractive"
           src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}

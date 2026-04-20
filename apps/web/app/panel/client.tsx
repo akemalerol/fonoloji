@@ -129,7 +129,7 @@ export function PanelClient({ initial }: { initial: Me }) {
         <div className="panel p-6">
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Mevcut plan</div>
           <div className="mt-1 serif text-3xl">{plan.name}</div>
-          <div className="mt-1 font-mono text-sm text-muted-foreground">Ücretsiz · ömür boyu</div>
+          <div className="mt-1 font-mono text-sm text-muted-foreground">Ücretsiz · beta sürecinde</div>
           <ul className="mt-4 space-y-1 text-xs text-muted-foreground">
             {plan.features.map((f) => (
               <li key={f}>· {f}</li>

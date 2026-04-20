@@ -380,6 +380,61 @@ export const SCHEMA_STATEMENTS: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_kap_alerts_user ON kap_alerts(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_kap_alerts_fund ON kap_alerts(fund_code, enabled)`,
+
+  // Observability: sayfa ziyaretleri (client beacon'dan gelir). 30 gün tutulur.
+  `CREATE TABLE IF NOT EXISTS page_visits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts INTEGER NOT NULL,
+    path TEXT NOT NULL,
+    ip TEXT NOT NULL,
+    user_id INTEGER,
+    user_agent TEXT,
+    referer TEXT,
+    session_id TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_page_visits_ts ON page_visits(ts DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_page_visits_ip_ts ON page_visits(ip, ts DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_page_visits_session ON page_visits(session_id, ts DESC)`,
+
+  // Observability: /api/*, /v1/* çağrıları. Hangi endpoint, hangi fon kodu,
+  // hangi kullanıcı/IP, status, süre. 30 gün tutulur.
+  `CREATE TABLE IF NOT EXISTS api_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts INTEGER NOT NULL,
+    path TEXT NOT NULL,
+    method TEXT NOT NULL,
+    fund_code TEXT,
+    ip TEXT,
+    user_id INTEGER,
+    api_key_id INTEGER,
+    status INTEGER,
+    duration_ms INTEGER,
+    user_agent TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (api_key_id) REFERENCES api_keys(id) ON DELETE SET NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_api_requests_ts ON api_requests(ts DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_api_requests_fund_ts ON api_requests(fund_code, ts DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_api_requests_path_ts ON api_requests(path, ts DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_api_requests_ip_ts ON api_requests(ip, ts DESC)`,
+
+  // Observability: giden mail'lerin kopyası. Admin paneline düşer.
+  `CREATE TABLE IF NOT EXISTS outgoing_emails (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts INTEGER NOT NULL,
+    to_email TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    template TEXT,
+    body_preview TEXT,
+    body_html TEXT,
+    status TEXT NOT NULL,
+    error TEXT,
+    user_id INTEGER,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_outgoing_emails_ts ON outgoing_emails(ts DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_outgoing_emails_to ON outgoing_emails(to_email, ts DESC)`,
 ];
 
 const ADDITIONAL_COLUMNS: Array<{ table: string; column: string; type: string }> = [
