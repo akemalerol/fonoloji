@@ -492,6 +492,111 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
     };
   });
 
+  // Analist konsensüsü — fon portföyündeki hisseler için İş Yatırım verileri
+  // ağırlıklı ortalamaya dönüştürülür. Fon detay sayfasındaki "Analist Konsensüsü"
+  // kartını besler. "İş Yatırım raporuna göre hazırlanmıştır" disclaimer'ı zorunlu
+  // — isyatirim_stocks.as_of_date ile birlikte dönüyor ki UI "son güncelleme" yazabilsin.
+  app.get('/funds/:code/analyst-consensus', async (req, reply) => {
+    const { code } = req.params as { code: string };
+    const db = getDb();
+
+    const latest = db
+      .prepare(
+        `SELECT MAX(report_date) as d FROM fund_holdings
+         WHERE code = ? AND asset_type = 'stock' AND asset_code IS NOT NULL`,
+      )
+      .get(code) as { d: string | null };
+    if (!latest.d) {
+      return { reportDate: null, coverage: 0, items: [], weightedPotential: null };
+    }
+
+    const rows = db
+      .prepare(
+        `SELECT h.asset_code as ticker,
+                h.asset_name,
+                h.weight,
+                s.name as stock_name,
+                s.close_price,
+                s.target_price,
+                s.potential_pct,
+                s.pe_ratio,
+                s.recommendation,
+                s.as_of_date
+         FROM fund_holdings h
+         LEFT JOIN isyatirim_stocks s ON s.ticker = h.asset_code
+         WHERE h.code = ? AND h.report_date = ?
+           AND h.asset_type = 'stock' AND h.asset_code IS NOT NULL
+         ORDER BY h.weight DESC`,
+      )
+      .all(code, latest.d) as Array<{
+      ticker: string;
+      asset_name: string;
+      weight: number;
+      stock_name: string | null;
+      close_price: number | null;
+      target_price: number | null;
+      potential_pct: number | null;
+      pe_ratio: number | null;
+      recommendation: string | null;
+      as_of_date: string | null;
+    }>;
+
+    if (rows.length === 0) {
+      return { reportDate: latest.d, coverage: 0, items: [], weightedPotential: null };
+    }
+
+    let totalWeight = 0;
+    let coveredWeight = 0;
+    let weightedSum = 0;
+    const recCount: Record<string, number> = {
+      AL: 0,
+      TUT: 0,
+      SAT: 0,
+      'GÖZDEN GEÇİRİLİYOR': 0,
+      unrated: 0,
+    };
+    let stocksAsOfDate: string | null = null;
+
+    for (const r of rows) {
+      totalWeight += r.weight;
+      if (r.potential_pct !== null && r.target_price !== null) {
+        coveredWeight += r.weight;
+        weightedSum += r.weight * r.potential_pct;
+      }
+      if (r.recommendation && r.recommendation in recCount) {
+        recCount[r.recommendation]!++;
+      } else if (r.close_price !== null) {
+        recCount.unrated!++;
+      }
+      if (r.as_of_date && (!stocksAsOfDate || r.as_of_date > stocksAsOfDate)) {
+        stocksAsOfDate = r.as_of_date;
+      }
+    }
+
+    const coverage = totalWeight > 0 ? coveredWeight / totalWeight : 0;
+    const weightedPotential = coveredWeight > 0 ? weightedSum / coveredWeight : null;
+
+    return {
+      reportDate: latest.d,
+      stocksAsOfDate,
+      totalWeight: Math.round(totalWeight * 100) / 100,
+      coveredWeight: Math.round(coveredWeight * 100) / 100,
+      coverage: Math.round(coverage * 10000) / 10000,
+      weightedPotential: weightedPotential !== null ? Math.round(weightedPotential * 100) / 100 : null,
+      recCount,
+      items: rows.map((r) => ({
+        ticker: r.ticker,
+        name: r.stock_name ?? r.asset_name,
+        weight: r.weight,
+        closePrice: r.close_price,
+        targetPrice: r.target_price,
+        potentialPct: r.potential_pct,
+        peRatio: r.pe_ratio,
+        recommendation: r.recommendation,
+      })),
+    };
+  });
+
   // Manager behavior score
   app.get('/management-companies/:name/score', async (req) => {
     const { name } = req.params as { name: string };

@@ -321,6 +321,24 @@ export const SCHEMA_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_fund_holdings_code ON fund_holdings(code)`,
   `CREATE INDEX IF NOT EXISTS idx_fund_holdings_date ON fund_holdings(report_date)`,
 
+  // İş Yatırım parametrik hisse tarayıcı verisi — günlük snapshot.
+  // Fon portföyündeki hisseler için ağırlıklı analist konsensüsü (hedef fiyat,
+  // getiri potansiyeli %, AL/SAT/TUT) hesaplamasında kullanılır.
+  `CREATE TABLE IF NOT EXISTS isyatirim_stocks (
+    ticker TEXT PRIMARY KEY,
+    name TEXT,
+    close_price REAL,
+    target_price REAL,
+    potential_pct REAL,
+    pe_ratio REAL,
+    market_cap_mn_tl REAL,
+    recommendation TEXT,
+    as_of_date TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_isyatirim_stocks_date ON isyatirim_stocks(as_of_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_isyatirim_stocks_recommendation ON isyatirim_stocks(recommendation)`,
+
   `CREATE TABLE IF NOT EXISTS nav_estimates (
     code TEXT NOT NULL,
     estimate_date TEXT NOT NULL,

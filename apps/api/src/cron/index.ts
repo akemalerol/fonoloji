@@ -13,6 +13,7 @@ import { runKapHoldingsIngest } from '../scripts/ingestKapHoldings.js';
 import { runKapDisclosuresIngest } from '../scripts/ingestKapDisclosures.js';
 import { runEstimates, verifyEstimates } from '../scripts/navEstimateDaily.js';
 import { runPortfolioIngest } from '../scripts/ingestPortfolio.js';
+import { runIsyatirimIngest } from '../scripts/ingestIsyatirimAnalysts.js';
 import { runAlertChecker, runFundChangeDetector, runPeriodSummary, runWatchlistDigest, runWeeklyDigest } from './alerts.js';
 import { purgeOldTracking } from '../services/tracking.js';
 
@@ -190,6 +191,19 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
       log.info(`[cron] portfolio: ${r.processed} fon, ${r.inserted} snapshot, ${r.skipped} skip`);
     } catch (err) {
       log.error('[cron] portfolio hata:', err);
+    }
+  }, { timezone: 'Europe/Istanbul' });
+
+  // İş Yatırım analist verisi — hafta içi 18:15 TR (Borsa kapanışı 18:00'den sonra).
+  // Tek POST'ta tüm BIST kapsamı çekilir; 4 ek POST ile AL/SAT/TUT etiketlenir.
+  // Fon detay sayfasında "analist konsensüsü" kartını besler.
+  cron.schedule('15 18 * * 1-5', async () => {
+    log.info('[cron] İş Yatırım analist ingest başlıyor');
+    try {
+      const r = await runIsyatirimIngest();
+      log.info(`[cron] İş Yatırım: ${r.total} hisse, ${r.tagged} öneri etiketli, ${r.errors} hata`);
+    } catch (err) {
+      log.error('[cron] İş Yatırım hata:', err);
     }
   }, { timezone: 'Europe/Istanbul' });
 

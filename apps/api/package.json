@@ -15,6 +15,7 @@
     "ingest:meta": "tsx src/scripts/ingestMeta.ts",
     "ingest:portfolio": "tsx src/scripts/ingestPortfolio.ts",
     "ingest:profile": "tsx src/scripts/ingestProfile.ts",
+    "ingest:isyatirim": "tsx src/scripts/ingestIsyatirimAnalysts.ts",
     "admin:promote": "tsx src/scripts/adminPromote.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit"

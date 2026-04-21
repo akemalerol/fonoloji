@@ -3,6 +3,7 @@ import { AdSlot } from '@/components/ads/ad-slot';
 import { ShareButton } from '@/components/site/share-button';
 import { RecordRecentFund } from '@/components/site/recently-viewed';
 import { CompanyLogo } from '@/components/site/company-logo';
+import { AnalystConsensusCard } from './analyst-consensus-card';
 import { KapDisclosuresCard } from './kap-disclosures-card';
 import { PercentileBadges } from './percentile-badges';
 import { SocialProof } from './social-proof';
@@ -77,7 +78,7 @@ export default async function FundDetailPage({
   if (!detail) notFound();
 
   const period = searchParams.period ?? '1y';
-  const [history, monthly, drawdown, timeline, advanced, aiSummary, disclosures, percentile] = await Promise.all([
+  const [history, monthly, drawdown, timeline, advanced, aiSummary, disclosures, percentile, analystConsensus] = await Promise.all([
     api.getHistory(code, period),
     api.getMonthly(code).catch(() => ({ code, months: [] })),
     api.getDrawdown(code).catch(() => ({ code, points: [] })),
@@ -86,6 +87,7 @@ export default async function FundDetailPage({
     api.aiSummary(code).catch(() => ({ code, summary: null as string | null, cached: false, model: undefined as string | undefined })),
     api.disclosures(code, 50).catch(() => ({ code, items: [] as Array<{ disclosure_index: number; subject: string | null; kap_title: string | null; rule_type: string | null; period: number | null; year: number | null; publish_date: number; attachment_count: number; summary: string | null }>, backfillTriggered: false })),
     api.percentile(code).catch(() => null),
+    api.analystConsensus(code).catch(() => null),
   ]);
   const points = history.points;
   const firstPrice = points[0]?.price ?? 0;
@@ -514,6 +516,10 @@ export default async function FundDetailPage({
         category={fund.category ?? null}
         initialData={percentile}
       />
+
+      {analystConsensus && analystConsensus.items.length > 0 && (
+        <AnalystConsensusCard {...analystConsensus} />
+      )}
 
       <KapDisclosuresCard
         code={fund.code}

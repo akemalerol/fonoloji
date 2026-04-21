@@ -400,4 +400,25 @@ export const api = {
       } | null;
       reason?: string;
     }>(`/api/funds/${encodeURIComponent(code)}/live-estimate`),
+
+  analystConsensus: (code: string) =>
+    fetchJson<{
+      reportDate: string | null;
+      stocksAsOfDate: string | null;
+      totalWeight: number;
+      coveredWeight: number;
+      coverage: number;
+      weightedPotential: number | null;
+      recCount: Record<string, number>;
+      items: Array<{
+        ticker: string;
+        name: string | null;
+        weight: number;
+        closePrice: number | null;
+        targetPrice: number | null;
+        potentialPct: number | null;
+        peRatio: number | null;
+        recommendation: string | null;
+      }>;
+    }>(`/api/funds/${encodeURIComponent(code)}/analyst-consensus`),
 };
