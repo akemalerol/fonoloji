@@ -524,11 +524,12 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
          FROM page_visits WHERE ts >= ? GROUP BY bucket ORDER BY bucket ASC`,
       )
       .all(bucketMs, bucketMs, cutoff) as Array<{ bucket: number; views: number; uniq: number }>;
+    // Sadece API anahtarı ile çağrılanlar — sayfa JS'inin /api/* çağrılarını buraya dahil etme
     const apiRows = db
       .prepare(
         `SELECT (ts / ?) * ? as bucket, COUNT(*) as calls,
                 SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors
-         FROM api_requests WHERE ts >= ? GROUP BY bucket ORDER BY bucket ASC`,
+         FROM api_requests WHERE ts >= ? AND api_key_id IS NOT NULL GROUP BY bucket ORDER BY bucket ASC`,
       )
       .all(bucketMs, bucketMs, cutoff) as Array<{ bucket: number; calls: number; errors: number }>;
 
@@ -596,12 +597,13 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
     const r2 = db
       .prepare(`SELECT COUNT(*) as views, COUNT(DISTINCT ip) as uniq FROM page_visits WHERE ts >= ?`)
       .get(oneHour) as { views: number; uniq: number };
+    // Sadece API anahtarı ile gelen çağrılar — sayfa trafiği ayrı sayılıyor
     const r3 = db
       .prepare(
         `SELECT COUNT(*) as calls,
                 SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors,
                 AVG(duration_ms) as avg_ms
-         FROM api_requests WHERE ts >= ?`,
+         FROM api_requests WHERE ts >= ? AND api_key_id IS NOT NULL`,
       )
       .get(oneHour) as { calls: number; errors: number; avg_ms: number };
     return {
@@ -698,7 +700,8 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
     return { windowHours: windowMs / 3_600_000, totals, topPaths, topReferers };
   });
 
-  // API çağrı analitiği: endpoint, status, top funds, top IP.
+  // API çağrı analitiği: yalnızca API anahtarı ile çağrılanları say (api_key_id IS NOT NULL).
+  // Tarayıcıdan gelen /api/* (SSR + sayfa JS) istekleri "sayfa trafiği" olarak sayılır, buraya dahil edilmez.
   app.get('/api-stats', async (req) => {
     const { hours = '24' } = req.query as { hours?: string };
     const windowMs = Math.max(1, Math.min(720, Number(hours) || 24)) * 3_600_000;
@@ -710,7 +713,7 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
                 AVG(duration_ms) as avg_ms,
                 SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors
          FROM api_requests
-         WHERE ts >= ?
+         WHERE ts >= ? AND api_key_id IS NOT NULL
          GROUP BY path, method
          ORDER BY calls DESC
          LIMIT 40`,
@@ -721,7 +724,7 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
         `SELECT fund_code, COUNT(*) as calls,
                 COUNT(DISTINCT ip) as unique_ips
          FROM api_requests
-         WHERE ts >= ? AND fund_code IS NOT NULL
+         WHERE ts >= ? AND api_key_id IS NOT NULL AND fund_code IS NOT NULL
          GROUP BY fund_code
          ORDER BY calls DESC
          LIMIT 30`,
@@ -731,7 +734,7 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
       .prepare(
         `SELECT status, COUNT(*) as c
          FROM api_requests
-         WHERE ts >= ?
+         WHERE ts >= ? AND api_key_id IS NOT NULL
          GROUP BY status
          ORDER BY c DESC`,
       )
@@ -741,16 +744,16 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
     const pg = Math.max(1, Number(page) || 1);
     const offset = (pg - 1) * ps;
     const ipTotalRow = db
-      .prepare(`SELECT COUNT(DISTINCT ip) as c FROM api_requests WHERE ts >= ? AND ip IS NOT NULL`)
+      .prepare(`SELECT COUNT(DISTINCT ip) as c FROM api_requests WHERE ts >= ? AND api_key_id IS NOT NULL AND ip IS NOT NULL`)
       .get(cutoff) as { c: number };
     const topIps = db
       .prepare(
         `SELECT ip, COUNT(*) as calls,
                 SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors,
-                (SELECT user_agent FROM api_requests WHERE ip = r.ip ORDER BY ts DESC LIMIT 1) as user_agent,
-                (SELECT country FROM api_requests WHERE ip = r.ip AND country IS NOT NULL ORDER BY ts DESC LIMIT 1) as country
+                (SELECT user_agent FROM api_requests WHERE ip = r.ip AND api_key_id IS NOT NULL ORDER BY ts DESC LIMIT 1) as user_agent,
+                (SELECT country FROM api_requests WHERE ip = r.ip AND api_key_id IS NOT NULL AND country IS NOT NULL ORDER BY ts DESC LIMIT 1) as country
          FROM api_requests r
-         WHERE ts >= ? AND ip IS NOT NULL
+         WHERE ts >= ? AND api_key_id IS NOT NULL AND ip IS NOT NULL
          GROUP BY ip
          ORDER BY calls DESC
          LIMIT ? OFFSET ?`,
@@ -763,25 +766,25 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
                 AVG(duration_ms) as avg_ms,
                 SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors,
                 COUNT(DISTINCT ip) as unique_ips
-         FROM api_requests WHERE ts >= ?`,
+         FROM api_requests WHERE ts >= ? AND api_key_id IS NOT NULL`,
       )
       .get(cutoff) as { calls: number; avg_ms: number; errors: number; unique_ips: number };
     const topCountries = db
       .prepare(
         `SELECT country, COUNT(*) as calls, COUNT(DISTINCT ip) as unique_ips
          FROM api_requests
-         WHERE ts >= ? AND country IS NOT NULL
+         WHERE ts >= ? AND api_key_id IS NOT NULL AND country IS NOT NULL
          GROUP BY country
          ORDER BY calls DESC
          LIMIT 15`,
       )
       .all(cutoff);
-    // Hangi sitelerden API çağrısı geldi (Origin) — sitemiz değilse dış entegrasyon var demektir
+    // API anahtarı ile çağıran dış siteler (Origin)
     const topOrigins = db
       .prepare(
         `SELECT origin, COUNT(*) as calls, COUNT(DISTINCT ip) as unique_ips
          FROM api_requests
-         WHERE ts >= ? AND origin IS NOT NULL AND origin != ''
+         WHERE ts >= ? AND api_key_id IS NOT NULL AND origin IS NOT NULL AND origin != ''
          GROUP BY origin
          ORDER BY calls DESC
          LIMIT 20`,
@@ -792,10 +795,27 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
       .prepare(
         `SELECT referer, COUNT(*) as calls
          FROM api_requests
-         WHERE ts >= ? AND referer IS NOT NULL AND referer != ''
+         WHERE ts >= ? AND api_key_id IS NOT NULL AND referer IS NOT NULL AND referer != ''
          GROUP BY referer
          ORDER BY calls DESC
          LIMIT 20`,
+      )
+      .all(cutoff);
+    // Aktif API anahtarı bazlı kullanım tablosu — kim en çok sorguluyor?
+    const topKeys = db
+      .prepare(
+        `SELECT k.id, k.key_prefix, k.name, u.email, u.plan,
+                COUNT(*) as calls,
+                COUNT(DISTINCT r.fund_code) as unique_funds,
+                SUM(CASE WHEN r.status >= 400 THEN 1 ELSE 0 END) as errors,
+                MAX(r.ts) as last_seen
+         FROM api_requests r
+         JOIN api_keys k ON k.id = r.api_key_id
+         LEFT JOIN users u ON u.id = k.user_id
+         WHERE r.ts >= ? AND r.api_key_id IS NOT NULL
+         GROUP BY k.id
+         ORDER BY calls DESC
+         LIMIT 30`,
       )
       .all(cutoff);
     return {
@@ -809,11 +829,11 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
       topCountries,
       topOrigins,
       topReferers,
+      topKeys,
     };
   });
 
-  // IP detay drill-down: seçili IP'nin son N saatte ne yaptığı —
-  // hangi endpoint, hangi fon, kaç kez, hata sayısı + son 50 request detayı.
+  // IP detay drill-down: seçili IP'nin son N saatte ne yaptığı — yalnızca API anahtarlı istekler.
   app.get('/api-stats/ip', async (req, reply) => {
     const { ip, hours = '24' } = req.query as { ip?: string; hours?: string };
     if (!ip) return reply.code(400).send({ error: 'ip parametresi gerekli' });
@@ -830,56 +850,55 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
                 AVG(duration_ms) as avgMs,
                 MIN(ts) as firstSeen,
                 MAX(ts) as lastSeen,
-                (SELECT country FROM api_requests WHERE ip = ? AND country IS NOT NULL ORDER BY ts DESC LIMIT 1) as country,
-                (SELECT user_agent FROM api_requests WHERE ip = ? ORDER BY ts DESC LIMIT 1) as userAgent
+                (SELECT country FROM api_requests WHERE ip = ? AND api_key_id IS NOT NULL AND country IS NOT NULL ORDER BY ts DESC LIMIT 1) as country,
+                (SELECT user_agent FROM api_requests WHERE ip = ? AND api_key_id IS NOT NULL ORDER BY ts DESC LIMIT 1) as userAgent
          FROM api_requests
-         WHERE ip = ? AND ts >= ?`,
+         WHERE ip = ? AND api_key_id IS NOT NULL AND ts >= ?`,
       )
       .get(ip, ip, ip, cutoff);
     const topEndpoints = db
       .prepare(
         `SELECT path, method, COUNT(*) as calls, AVG(duration_ms) as avgMs,
                 SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) as errors
-         FROM api_requests WHERE ip = ? AND ts >= ?
+         FROM api_requests WHERE ip = ? AND api_key_id IS NOT NULL AND ts >= ?
          GROUP BY path, method ORDER BY calls DESC LIMIT 30`,
       )
       .all(ip, cutoff);
     const topFunds = db
       .prepare(
         `SELECT fund_code, COUNT(*) as calls
-         FROM api_requests WHERE ip = ? AND ts >= ? AND fund_code IS NOT NULL
+         FROM api_requests WHERE ip = ? AND api_key_id IS NOT NULL AND ts >= ? AND fund_code IS NOT NULL
          GROUP BY fund_code ORDER BY calls DESC LIMIT 30`,
       )
       .all(ip, cutoff);
-    // Son 100 istek (chronological tail) — gerçek kullanım paterni
     const recent = db
       .prepare(
         `SELECT ts, method, path, fund_code, status, duration_ms, api_key_id, user_id, origin, referer
-         FROM api_requests WHERE ip = ? AND ts >= ?
+         FROM api_requests WHERE ip = ? AND api_key_id IS NOT NULL AND ts >= ?
          ORDER BY ts DESC LIMIT 100`,
       )
       .all(ip, cutoff);
-    // Bu IP hangi sitelerden arıyor?
     const topOrigins = db
       .prepare(
         `SELECT origin, COUNT(*) as calls FROM api_requests
-         WHERE ip = ? AND ts >= ? AND origin IS NOT NULL AND origin != ''
+         WHERE ip = ? AND api_key_id IS NOT NULL AND ts >= ? AND origin IS NOT NULL AND origin != ''
          GROUP BY origin ORDER BY calls DESC LIMIT 10`,
       )
       .all(ip, cutoff);
     const topReferers = db
       .prepare(
         `SELECT referer, COUNT(*) as calls FROM api_requests
-         WHERE ip = ? AND ts >= ? AND referer IS NOT NULL AND referer != ''
+         WHERE ip = ? AND api_key_id IS NOT NULL AND ts >= ? AND referer IS NOT NULL AND referer != ''
          GROUP BY referer ORDER BY calls DESC LIMIT 10`,
       )
       .all(ip, cutoff);
-    // Varsa bağlı kullanıcı / API key bilgisi
     const linkedUser = db
       .prepare(
         `SELECT DISTINCT u.id, u.email, u.plan, u.role
-         FROM api_requests r JOIN users u ON u.id = r.user_id
-         WHERE r.ip = ? AND r.ts >= ? AND r.user_id IS NOT NULL LIMIT 1`,
+         FROM api_requests r
+         JOIN api_keys k ON k.id = r.api_key_id
+         JOIN users u ON u.id = k.user_id
+         WHERE r.ip = ? AND r.ts >= ? AND r.api_key_id IS NOT NULL LIMIT 1`,
       )
       .get(ip, cutoff);
     const linkedKeys = db

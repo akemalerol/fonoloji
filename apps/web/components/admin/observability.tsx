@@ -283,9 +283,9 @@ function LiveSnapshot() {
         pulse
       />
       <StatCard label="1 SAATLİK VIEW" value={s?.lastHour.views ?? '—'} sub={`${s?.lastHour.uniqueVisitors ?? 0} benzersiz`} />
-      <StatCard label="1 SAATLİK API" value={s?.lastHour.apiCalls ?? '—'} sub={`ort ${s?.lastHour.avgMs ?? 0}ms`} />
+      <StatCard label="1 SA · API ANAHTARI" value={s?.lastHour.apiCalls ?? '—'} sub={`ort ${s?.lastHour.avgMs ?? 0}ms`} />
       <StatCard
-        label="HATA"
+        label="ANAHTAR HATA"
         value={s?.lastHour.apiErrors ?? '—'}
         sub="1 saatte 4xx/5xx"
         accent={s?.lastHour.apiErrors ? 'rose' : 'neutral'}
@@ -376,7 +376,7 @@ function TimelineChart() {
       )}
       <div className="mt-2 flex gap-4 text-[10px] text-muted-foreground">
         <span className="inline-flex items-center gap-1"><span className="h-2 w-3 rounded bg-brand-500/60" /> Sayfa görüntüleme</span>
-        <span className="inline-flex items-center gap-1"><span className="h-2 w-3 rounded bg-verdigris-500/50" /> API çağrıları</span>
+        <span className="inline-flex items-center gap-1"><span className="h-2 w-3 rounded bg-verdigris-500/50" /> API anahtarı çağrıları</span>
       </div>
     </div>
   );
@@ -444,7 +444,7 @@ export function Observability() {
         {([
           { k: 'live', label: 'Canlı' },
           { k: 'pages', label: 'Sayfa İst.' },
-          { k: 'api', label: 'API Çağrıları' },
+          { k: 'api', label: 'API Anahtarı Çağrıları' },
           { k: 'mail', label: 'Giden Mailler' },
         ] as Array<{ k: Tab; label: string }>).map((t) => (
           <button
@@ -726,6 +726,17 @@ interface ApiStatsResp {
   topCountries?: Array<{ country: string; calls: number; unique_ips: number }>;
   topOrigins?: Array<{ origin: string; calls: number; unique_ips: number }>;
   topReferers?: Array<{ referer: string; calls: number }>;
+  topKeys?: Array<{
+    id: number;
+    key_prefix: string;
+    name: string | null;
+    email: string | null;
+    plan: string | null;
+    calls: number;
+    unique_funds: number;
+    errors: number;
+    last_seen: number;
+  }>;
 }
 
 interface IpDetailResp {
@@ -773,11 +784,15 @@ function ApiStats() {
 
   return (
     <div className="space-y-4">
+      <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[11px] text-emerald-200/80">
+        Bu sekme <strong className="font-semibold">yalnızca API anahtarı</strong> ile gelen çağrıları
+        gösterir — tarayıcıdan gelen sayfa yüklemeleri <em>Sayfa İst.</em> sekmesinde listelenir.
+      </div>
       <div className="flex items-center gap-3">
         <div className="text-xs text-muted-foreground">
           {loading
             ? 'Yükleniyor…'
-            : `${data?.totals.calls ?? 0} çağrı · ${data?.totals.unique_ips ?? 0} IP · ${data?.totals.errors ?? 0} hata · ort ${Math.round(data?.totals.avg_ms ?? 0)}ms`}
+            : `${data?.totals.calls ?? 0} anahtar çağrısı · ${data?.totals.unique_ips ?? 0} IP · ${data?.totals.errors ?? 0} hata · ort ${Math.round(data?.totals.avg_ms ?? 0)}ms`}
         </div>
         <div className="ml-auto flex flex-wrap gap-1">
           {[1, 2, 5, 12, 24, 168].map((h) => (
@@ -794,6 +809,49 @@ function ApiStats() {
           ))}
         </div>
       </div>
+      {(data?.topKeys ?? []).length > 0 && (
+        <div className="rounded-lg border border-border/60">
+          <div className="border-b border-border/40 bg-muted/20 px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">
+            En aktif API anahtarları
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                <th className="px-3 py-1.5 text-left">Anahtar</th>
+                <th className="px-3 py-1.5 text-left">Kullanıcı</th>
+                <th className="px-3 py-1.5 text-left">Plan</th>
+                <th className="px-3 py-1.5 text-right">Çağrı</th>
+                <th className="px-3 py-1.5 text-right">Farklı fon</th>
+                <th className="px-3 py-1.5 text-right">Hata</th>
+                <th className="px-3 py-1.5 text-right">Son</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data?.topKeys ?? []).map((k) => (
+                <tr key={k.id} className="border-t border-border/40">
+                  <td className="px-3 py-1.5 font-mono text-xs">
+                    {k.key_prefix}…{k.name && <span className="ml-2 text-muted-foreground">{k.name}</span>}
+                  </td>
+                  <td className="px-3 py-1.5 text-xs">{k.email ?? <span className="text-muted-foreground">—</span>}</td>
+                  <td className="px-3 py-1.5 text-xs">
+                    {k.plan ? (
+                      <span className="rounded bg-muted/30 px-1.5 py-0.5 text-[10px] uppercase">{k.plan}</span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-1.5 text-right text-xs">{k.calls}</td>
+                  <td className="px-3 py-1.5 text-right text-xs text-muted-foreground">{k.unique_funds}</td>
+                  <td className={cn('px-3 py-1.5 text-right text-xs', k.errors > 0 && 'text-rose-400')}>
+                    {k.errors > 0 ? k.errors : '—'}
+                  </td>
+                  <td className="px-3 py-1.5 text-right text-xs text-muted-foreground">{agoShort(k.last_seen)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-lg border border-border/60">
           <div className="border-b border-border/40 bg-muted/20 px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">
@@ -951,7 +1009,7 @@ function ApiStats() {
               {(data?.topOrigins ?? []).length === 0 && (
                 <tr>
                   <td className="px-3 py-4 text-center text-xs text-muted-foreground">
-                    Harici siteden Origin header'ı ile gelen çağrı yok. (SSR ve terminal istekleri Origin göndermez.)
+                    Tarayıcıdan Origin header'ı ile gelen anahtar çağrısı yok. (curl/terminal istekleri Origin göndermez.)
                   </td>
                 </tr>
               )}
