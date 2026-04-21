@@ -200,7 +200,7 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
   cron.schedule('15 18 * * 1-5', async () => {
     log.info('[cron] İş Yatırım analist ingest başlıyor');
     try {
-      const r = await runIsyatirimIngest();
+      const r = await runIsyatirimIngest({ trigger: 'cron' });
       log.info(`[cron] İş Yatırım: ${r.total} hisse, ${r.tagged} öneri etiketli, ${r.errors} hata`);
     } catch (err) {
       log.error('[cron] İş Yatırım hata:', err);

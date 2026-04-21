@@ -7,6 +7,7 @@ import { sendAdminBroadcast, sendContactReply } from '../services/mail.js';
 import { getSystemHealth } from '../services/systemHealth.js';
 import { AD_PLACEMENTS, listAds, updateAd } from '../services/ads.js';
 import { generateTweet, postTweet, queueTweet, type TweetContext } from '../services/x.js';
+import { runIsyatirimIngest } from '../scripts/ingestIsyatirimAnalysts.js';
 
 const COOKIE_NAME = 'fonoloji_session';
 
@@ -968,6 +969,77 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
       .all(ip, cutoff);
 
     return { ip, hours: h, totals, topEndpoints, topFunds, recent, linkedUser, linkedKeys, topOrigins, topReferers };
+  });
+
+  // === İş Yatırım analist ingest — son çağrılar, hisse snapshot'ı, manuel tetikleme ===
+
+  app.get('/isyatirim/runs', async (req) => {
+    const { limit = '50' } = req.query as { limit?: string };
+    const n = Math.min(Math.max(Number(limit) || 50, 1), 500);
+    const db = getDb();
+    const rows = db
+      .prepare(
+        `SELECT id, started_at, finished_at, duration_ms, total, tagged, errors,
+                trigger, error_message, status
+         FROM isyatirim_runs
+         ORDER BY started_at DESC
+         LIMIT ?`,
+      )
+      .all(n);
+    const stats = db
+      .prepare(
+        `SELECT COUNT(*) as total_runs,
+                SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END) as ok,
+                SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as failed,
+                MAX(started_at) as last_run
+         FROM isyatirim_runs`,
+      )
+      .get() as { total_runs: number; ok: number; failed: number; last_run: number | null };
+    const latest = db
+      .prepare(
+        `SELECT COUNT(*) as stocks, MAX(as_of_date) as as_of_date
+         FROM isyatirim_stocks`,
+      )
+      .get() as { stocks: number; as_of_date: string | null };
+    return { items: rows, stats, latest };
+  });
+
+  app.get('/isyatirim/stocks', async (req) => {
+    const { q = '', limit = '200' } = req.query as { q?: string; limit?: string };
+    const n = Math.min(Math.max(Number(limit) || 200, 1), 1000);
+    const db = getDb();
+    const where = q ? `WHERE ticker LIKE ? OR name LIKE ?` : '';
+    const params: unknown[] = q ? [`%${q.toUpperCase()}%`, `%${q}%`] : [];
+    const rows = db
+      .prepare(
+        `SELECT ticker, name, close_price, target_price, potential_pct, pe_ratio,
+                market_cap_mn_tl, recommendation, as_of_date, updated_at
+         FROM isyatirim_stocks
+         ${where}
+         ORDER BY market_cap_mn_tl DESC NULLS LAST
+         LIMIT ?`,
+      )
+      .all(...params, n);
+    return { items: rows };
+  });
+
+  // Manuel tetikleme — admin butonu. Async çalışır, hemen run_id döner; UI polling yapabilir.
+  app.post('/isyatirim/run', async (req, reply) => {
+    // Zaten çalışan bir run varsa çakışma önle
+    const db = getDb();
+    const running = db
+      .prepare(`SELECT id, started_at FROM isyatirim_runs WHERE status = 'running' LIMIT 1`)
+      .get() as { id: number; started_at: number } | undefined;
+    if (running && Date.now() - running.started_at < 5 * 60_000) {
+      return reply.code(409).send({ error: 'Zaten çalışan bir sorgu var', runId: running.id });
+    }
+
+    // Fire-and-forget; hata DB'ye log'lanacak
+    runIsyatirimIngest({ trigger: 'manual' }).catch((err) => {
+      req.log.error({ err }, '[admin] İş Yatırım manuel ingest hata');
+    });
+
+    return { ok: true, started: true };
   });
 
   // Giden mail'lerin kopyaları (admin panelde görünür).

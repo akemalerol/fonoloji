@@ -1,8 +1,8 @@
 'use client';
 
-import { ChevronDown, ChevronUp, Sparkles, TrendingUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, TrendingUp } from 'lucide-react';
 import * as React from 'react';
-import { cn, formatPercent, formatPrice } from '@/lib/utils';
+import { cn, formatPrice } from '@/lib/utils';
 
 // "Analist Konsensüsü" kartı — fon portföyündeki hisseler için İş Yatırım'ın
 // analist verilerini ağırlıklı ortalamaya dönüştürür. Kapsamadaki hisselerin
@@ -73,17 +73,25 @@ export function AnalystConsensusCard(props: Props) {
     (props.recCount['GÖZDEN GEÇİRİLİYOR'] ?? 0);
 
   return (
-    <section className="mt-8 rounded-2xl border border-border/60 bg-gradient-to-br from-card/60 to-card/30 p-5">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <div className="rounded-lg bg-brand-500/15 p-2 text-brand-300">
-            <Sparkles className="h-5 w-5" />
+    <section className="mt-8 overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-br from-card/60 to-card/30">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/50 bg-gradient-to-r from-[#003976]/15 via-[#003976]/5 to-transparent px-5 py-4">
+        <div className="flex items-center gap-4">
+          <div className="flex h-12 w-28 items-center justify-center rounded-lg bg-white p-2 shadow-sm ring-1 ring-border/40">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/brand/isyatirim-logo.svg"
+              alt="İş Yatırım"
+              className="h-full w-auto"
+              loading="lazy"
+            />
           </div>
           <div>
-            <h2 className="text-base font-semibold md:text-lg">Analist Konsensüsü</h2>
-            <p className="mt-0.5 max-w-xl text-xs text-muted-foreground">
-              Fon portföyündeki hisseler için İş Yatırım analistlerinin hedef fiyat & getiri
-              potansiyeli verilerinin ağırlıklı ortalaması.
+            <h2 className="display text-xl font-bold tracking-tight md:text-2xl">
+              İŞ YATIRIM TAVSİYESİ
+            </h2>
+            <p className="mt-0.5 max-w-xl text-[11px] text-muted-foreground">
+              Fon portföyündeki hisseler için İş Yatırım araştırma ekibinin hedef fiyat ve
+              getiri potansiyeli verilerinin ağırlıklı ortalaması.
             </p>
           </div>
         </div>
@@ -93,7 +101,8 @@ export function AnalystConsensusCard(props: Props) {
             <div>Analist verisi: <span className="font-mono">{formatTrDate(props.stocksAsOfDate)}</span></div>
           )}
         </div>
-      </header>
+      </div>
+      <div className="p-5">
 
       <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
         <div className="rounded-lg border border-border/40 bg-muted/20 p-3">
@@ -250,12 +259,13 @@ export function AnalystConsensusCard(props: Props) {
         </p>
       )}
 
-      <p className="mt-3 border-t border-border/30 pt-3 text-[10px] leading-relaxed text-muted-foreground">
-        <strong className="text-muted-foreground/90">Kaynak:</strong> Bu kart, İş Yatırım araştırma
-        ekibinin kamuya açık parametrik hisse tarayıcısından alınan hedef fiyat ve öneri
-        verileriyle hazırlanmıştır. Fon portföyündeki son bildirilen hisse dağılımı esas
-        alınarak ağırlıklı ortalama hesaplanır. Bilgi amaçlıdır; yatırım tavsiyesi değildir.
-      </p>
+        <p className="mt-3 border-t border-border/30 pt-3 text-[10px] leading-relaxed text-muted-foreground">
+          <strong className="text-muted-foreground/90">Kaynak:</strong> Bu kart, İş Yatırım
+          araştırma ekibinin kamuya açık parametrik hisse tarayıcısından alınan hedef fiyat ve
+          öneri verileriyle hazırlanmıştır. Fon portföyündeki son bildirilen hisse dağılımı esas
+          alınarak ağırlıklı ortalama hesaplanır. Bilgi amaçlıdır; yatırım tavsiyesi değildir.
+        </p>
+      </div>
     </section>
   );
 }

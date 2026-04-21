@@ -339,6 +339,22 @@ export const SCHEMA_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_isyatirim_stocks_date ON isyatirim_stocks(as_of_date)`,
   `CREATE INDEX IF NOT EXISTS idx_isyatirim_stocks_recommendation ON isyatirim_stocks(recommendation)`,
 
+  // Her ingest çağrısının özeti. Admin panelinde "Analist" sekmesinde listelenir.
+  // trigger: 'cron' | 'manual' — kim başlattı.
+  `CREATE TABLE IF NOT EXISTS isyatirim_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at INTEGER NOT NULL,
+    finished_at INTEGER,
+    duration_ms INTEGER,
+    total INTEGER,
+    tagged INTEGER,
+    errors INTEGER,
+    trigger TEXT,
+    error_message TEXT,
+    status TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_isyatirim_runs_started ON isyatirim_runs(started_at DESC)`,
+
   `CREATE TABLE IF NOT EXISTS nav_estimates (
     code TEXT NOT NULL,
     estimate_date TEXT NOT NULL,

@@ -104,17 +104,41 @@ export interface IsyatirimIngestResult {
   tagged: number;
   errors: number;
   asOfDate: string;
+  runId: number;
 }
 
-export async function runIsyatirimIngest(): Promise<IsyatirimIngestResult> {
+export async function runIsyatirimIngest(opts?: { trigger?: 'cron' | 'manual' }): Promise<IsyatirimIngestResult> {
   const db = getDb();
   const today = new Date().toISOString().slice(0, 10);
   const now = Date.now();
+  const trigger = opts?.trigger ?? 'cron';
   let errors = 0;
 
-  console.log('[isyatirim] Tüm hisseler çekiliyor...');
-  const all = await fetchScreener('');
-  console.log(`[isyatirim] ${all.length} hisse bulundu`);
+  // Log satırını önce "running" olarak aç; hata olsa bile finished_at + status yazacağız.
+  const runId = Number(
+    db
+      .prepare(
+        `INSERT INTO isyatirim_runs (started_at, trigger, status) VALUES (?, ?, 'running')`,
+      )
+      .run(now, trigger).lastInsertRowid,
+  );
+
+  const finalize = (status: 'ok' | 'error', totalCount: number, taggedCount: number, errMsg: string | null) => {
+    const fin = Date.now();
+    db.prepare(
+      `UPDATE isyatirim_runs SET finished_at = ?, duration_ms = ?, total = ?, tagged = ?, errors = ?, error_message = ?, status = ? WHERE id = ?`,
+    ).run(fin, fin - now, totalCount, taggedCount, errors, errMsg, status, runId);
+  };
+
+  let all: RawStock[];
+  try {
+    console.log('[isyatirim] Tüm hisseler çekiliyor...');
+    all = await fetchScreener('');
+    console.log(`[isyatirim] ${all.length} hisse bulundu`);
+  } catch (err) {
+    finalize('error', 0, 0, String(err instanceof Error ? err.message : err));
+    throw err;
+  }
 
   // Öneri etiketi için 4 ek çağrı — her filtreden dönen hisseye etiket koy
   const recMap = new Map<string, string>();
@@ -170,11 +194,14 @@ export async function runIsyatirimIngest(): Promise<IsyatirimIngestResult> {
   });
   tx(all);
 
+  finalize(errors === 0 ? 'ok' : 'error', all.length, recMap.size, null);
+
   return {
     total: all.length,
     tagged: recMap.size,
     errors,
     asOfDate: today,
+    runId,
   };
 }
 
