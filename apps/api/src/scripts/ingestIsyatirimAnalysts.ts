@@ -34,13 +34,21 @@ interface RawStock {
 }
 
 async function fetchScreener(oneri: OneriFilter): Promise<RawStock[]> {
+  // criterias dizisi aynı zamanda dönen alanları da belirler. Kapsam dışı kalmasın
+  // diye her alan için çok geniş bir aralık koyuyoruz — potansiyel için daraltma
+  // da yok; tüm İş Yatırım kapsamını çekiyoruz.
   const body = JSON.stringify({
     sektor: '',
     endeks: '',
     takip: '',
     oneri,
-    // geniş aralık — tüm kapsamdaki hisseleri getirsin
-    criterias: [[F_POTENTIAL, '-9999', '9999', 'False']],
+    criterias: [
+      [F_POTENTIAL, '-9999', '9999', 'False'],
+      [F_CLOSE, '-999999', '999999', 'False'],
+      [F_TARGET, '-999999', '999999', 'False'],
+      [F_PE, '-999999', '999999', 'False'],
+      [F_MCAP, '-999999999', '999999999', 'False'],
+    ],
     lang: '1055',
   });
 
@@ -66,10 +74,19 @@ async function fetchScreener(oneri: OneriFilter): Promise<RawStock[]> {
 
 function parseNumber(v: unknown): number | null {
   if (v === null || v === undefined) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
   const s = String(v).trim();
   if (!s || s === '-' || s === 'n/a' || s === 'N/A') return null;
-  // Türk formatı: "1.234,56" → 1234.56
-  const normalized = s.replace(/\./g, '').replace(',', '.');
+  // İş Yatırım hem "64.49" hem "1.234,56" döndürebiliyor — formatı ayırt et:
+  //   "1.234,56" (TR) → "." binlik, "," ondalık
+  //   "64.49"   (EN) → "." ondalık
+  //   "4,16"    (TR) → "," ondalık
+  const hasComma = s.includes(',');
+  const hasDot = s.includes('.');
+  let normalized: string;
+  if (hasComma && hasDot) normalized = s.replace(/\./g, '').replace(',', '.');
+  else if (hasComma) normalized = s.replace(',', '.');
+  else normalized = s;
   const n = Number(normalized);
   return Number.isFinite(n) ? n : null;
 }
