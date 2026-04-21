@@ -559,9 +559,12 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
 
     for (const r of rows) {
       totalWeight += r.weight;
-      if (r.potential_pct !== null && r.target_price !== null) {
+      // İş Yatırım hedef fiyat yayınlamıyorsa target=0 döner → kapsama dışı say
+      const hasValidTarget =
+        r.target_price !== null && r.target_price > 0 && r.potential_pct !== null;
+      if (hasValidTarget) {
         coveredWeight += r.weight;
-        weightedSum += r.weight * r.potential_pct;
+        weightedSum += r.weight * (r.potential_pct as number);
       }
       if (r.recommendation && r.recommendation in recCount) {
         recCount[r.recommendation]!++;
@@ -584,16 +587,19 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
       coverage: Math.round(coverage * 10000) / 10000,
       weightedPotential: weightedPotential !== null ? Math.round(weightedPotential * 100) / 100 : null,
       recCount,
-      items: rows.map((r) => ({
-        ticker: r.ticker,
-        name: r.stock_name ?? r.asset_name,
-        weight: r.weight,
-        closePrice: r.close_price,
-        targetPrice: r.target_price,
-        potentialPct: r.potential_pct,
-        peRatio: r.pe_ratio,
-        recommendation: r.recommendation,
-      })),
+      items: rows.map((r) => {
+        const validTarget = r.target_price !== null && r.target_price > 0;
+        return {
+          ticker: r.ticker,
+          name: r.stock_name ?? r.asset_name,
+          weight: r.weight,
+          closePrice: r.close_price,
+          targetPrice: validTarget ? r.target_price : null,
+          potentialPct: validTarget ? r.potential_pct : null,
+          peRatio: r.pe_ratio,
+          recommendation: r.recommendation,
+        };
+      }),
     };
   });
 
