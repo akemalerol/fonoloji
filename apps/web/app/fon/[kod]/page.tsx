@@ -1,9 +1,10 @@
-import { Activity, ArrowRight, Calendar, ExternalLink, Shield, Sparkles, TrendingDown, TrendingUp, Users, Wallet } from 'lucide-react';
+import { Activity, ArrowRight, Calendar, ExternalLink, FileText, Info, LineChart, PieChart, Shield, Sparkles, Star, TrendingDown, TrendingUp, Trophy, Users, Wallet } from 'lucide-react';
 import { AdSlot } from '@/components/ads/ad-slot';
 import { ShareButton } from '@/components/site/share-button';
 import { RecordRecentFund } from '@/components/site/recently-viewed';
 import { CompanyLogo } from '@/components/site/company-logo';
 import { AnalystConsensusCard } from './analyst-consensus-card';
+import { FundSection, SectionNav } from './fund-section';
 import { KapDisclosuresCard } from './kap-disclosures-card';
 import { PercentileBadges } from './percentile-badges';
 import { SocialProof } from './social-proof';
@@ -244,9 +245,9 @@ export default async function FundDetailPage({
         </div>
       )}
 
-      {/* Editorial commentary + category explainer */}
+      {/* Editorial commentary + category explainer (her zaman görünür, kısa) */}
       {(commentary.length > 0 || catInfo) && (
-        <div className="panel mb-6 p-5">
+        <div className="panel mb-4 p-5">
           {commentary.length > 0 && (
             <>
               <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -284,394 +285,419 @@ export default async function FundDetailPage({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
-        <MetricCell label="1G" value={fund.return_1d} />
-        <MetricCell label="1H" value={fund.return_1w} />
-        <MetricCell label="1A" value={fund.return_1m} />
-        <MetricCell label="3A" value={fund.return_3m} />
-        <MetricCell label="1Y" value={fund.return_1y} />
-        <MetricCell label="YBI" value={fund.return_ytd} />
-      </div>
+      <SectionNav
+        items={[
+          { id: 'getiri', label: 'Getiri', icon: <LineChart /> },
+          { id: 'portfoy', label: 'Portföy', icon: <PieChart /> },
+          ...(analystConsensus && analystConsensus.items.length > 0
+            ? [{ id: 'tavsiye', label: 'İş Yatırım', icon: <Star /> }]
+            : []),
+          { id: 'risk', label: 'Risk', icon: <Shield /> },
+          { id: 'karsilastirma', label: 'Karşılaştırma', icon: <Trophy /> },
+          { id: 'bilgi', label: 'Bilgi', icon: <Info /> },
+          { id: 'bildirimler', label: 'KAP', icon: <FileText /> },
+        ]}
+      />
 
-      <div className="mt-8 panel p-6">
-        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold">Fiyat grafiği</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Bu dönem getirisi
-              <span className={cn('ml-1 font-medium', periodReturn >= 0 ? 'text-gain' : 'text-loss')}>
-                {formatPercent(periodReturn)}
-              </span>
-            </p>
-          </div>
-          <PeriodTabs />
+      {/* === GETİRİ === */}
+      <FundSection
+        id="getiri"
+        title="Getiri & Fiyat Grafiği"
+        icon={<LineChart className="h-4 w-4" />}
+        subtitle="Dönemsel getiriler, hareketli ortalamalar ve fiyat grafiği"
+        defaultOpen
+      >
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+          <MetricCell label="1G" value={fund.return_1d} />
+          <MetricCell label="1H" value={fund.return_1w} />
+          <MetricCell label="1A" value={fund.return_1m} />
+          <MetricCell label="3A" value={fund.return_3m} />
+          <MetricCell label="1Y" value={fund.return_1y} />
+          <MetricCell label="YBI" value={fund.return_ytd} />
         </div>
-        <PriceChart data={points} positive={periodReturn >= 0} />
-      </div>
-
-      <AdSlot placement="fon-top" />
-
-      <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-3">
-        <div className="panel p-6 md:col-span-2">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Portföy dağılımı</h3>
-            {portfolioSlices.length > 0 && (
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
-                son snapshot
-              </span>
-            )}
-          </div>
-          {portfolioSlices.length > 0 ? (
-            <PortfolioDonut data={portfolioSlices} />
-          ) : (
-            <div className="py-8 text-center text-sm text-muted-foreground">Portföy verisi henüz çekilmedi</div>
-          )}
-        </div>
-        <div className="panel p-6">
-          <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            <Shield className="h-3.5 w-3.5" /> TEFAS Risk Skoru
-          </h3>
-          <RiskGauge value={fund.risk_score ?? null} />
-          <div className="mt-6 space-y-3 border-t border-border/50 pt-4">
-            <InfoRow
-              icon={<Sparkles className="h-4 w-4 text-brand-400" />}
-              labelNode={<Explainer term="sharpe_90">Sharpe (90g)</Explainer>}
-              value={fund.sharpe_90?.toFixed(2) ?? '—'}
-              sub="Risk düzeltilmiş getiri"
-            />
-            <InfoRow
-              icon={<TrendingUp className="h-4 w-4 text-verdigris-400" />}
-              labelNode={<Explainer term="volatility">Volatilite (90g)</Explainer>}
-              value={fund.volatility_90 ? `${(fund.volatility_90 * 100).toFixed(1)}%` : '—'}
-              sub="Yıllıklandırılmış stddev"
-            />
-            <InfoRow
-              icon={<ArrowRight className="h-4 w-4 text-amber-400 rotate-[135deg]" />}
-              labelNode={<Explainer term="drawdown">Max Drawdown (1Y)</Explainer>}
-              value={fund.max_drawdown_1y ? formatPercent(fund.max_drawdown_1y) : '—'}
-              sub="En dip"
-            />
-          </div>
-        </div>
-
-        {(fund.isin || fund.kap_url || fund.trading_status) && (
-          <div className="panel p-6 md:col-span-3">
-            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              Künye
-            </h3>
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-              {fund.isin && (
-                <KunyeCell label="ISIN" value={fund.isin} mono />
-              )}
-              {fund.trading_status && (
-                <KunyeCell label="Durum" value={fund.trading_status} />
-              )}
-              {fund.trading_start && fund.trading_end && (
-                <KunyeCell label="İşlem saati" value={`${fund.trading_start} – ${fund.trading_end}`} mono />
-              )}
-              {fund.buy_valor !== undefined && (
-                <KunyeCell label="Alış valörü" value={`T+${fund.buy_valor}`} mono />
-              )}
-              {fund.sell_valor !== undefined && (
-                <KunyeCell label="Satış valörü" value={`T+${fund.sell_valor}`} mono />
-              )}
-              {fund.kap_url && (
-                <a
-                  href={fund.kap_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 self-end text-xs text-brand-400 hover:text-brand-300 md:col-span-1"
-                >
-                  KAP Bilgi <ExternalLink className="h-3 w-3" />
-                </a>
-              )}
+        <div className="mt-5 panel p-5">
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold">Fiyat grafiği</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Bu dönem getirisi
+                <span className={cn('ml-1 font-medium', periodReturn >= 0 ? 'text-gain' : 'text-loss')}>
+                  {formatPercent(periodReturn)}
+                </span>
+              </p>
             </div>
+            <PeriodTabs />
           </div>
-        )}
-
-        <div className="panel p-6 md:col-span-2">
-          <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">Büyüklük & akış</h3>
-          <div className="grid grid-cols-3 gap-4">
-            <Stat
-              icon={<Wallet className="h-4 w-4 text-brand-400" />}
-              labelNode={<Explainer term="aum">Fon büyüklüğü</Explainer>}
-              sublabel="Yönetilen Varlık Büyüklüğü"
-              value={formatCompact(fund.aum)}
-              change={fund.flow_1m}
-            />
-            <Stat
-              icon={<Users className="h-4 w-4 text-verdigris-400" />}
-              label="Yatırımcı"
-              value={formatNumber(fund.investor_count)}
-            />
-            <Stat
-              icon={<Calendar className="h-4 w-4 text-amber-400" />}
-              label="Takipteyiz"
-              sublabel={fund.first_seen ? `${formatDate(fund.first_seen)} tarihinden beri` : undefined}
-              value={`${Math.max(1, Math.round(((new Date(fund.last_seen ?? Date.now()).getTime() - new Date(fund.first_seen ?? Date.now()).getTime()) / 86_400_000)))} gün`}
-            />
-          </div>
+          <PriceChart data={points} positive={periodReturn >= 0} />
         </div>
-
-        <div className="panel p-6">
-          <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">Hareketli ortalamalar</h3>
+        <div className="mt-4 panel p-5">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Hareketli ortalamalar
+          </h3>
           <MaRow label="MA 30" value={fund.ma_30} current={fund.current_price} />
           <MaRow label="MA 90" value={fund.ma_90} current={fund.current_price} />
           <MaRow label="MA 200" value={fund.ma_200} current={fund.current_price} />
         </div>
-
-        {/* Faz C: ileri risk metrikleri */}
-        <div className="panel p-6 md:col-span-3">
-          <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            <Activity className="h-3.5 w-3.5" /> İleri Analitik
-          </h3>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            <AdvMetric
-              labelNode={<Explainer term="sortino">Sortino (90g)</Explainer>}
-              value={fund.sortino_90?.toFixed(2)}
-              hint={
-                fund.sortino_90 === undefined || fund.sortino_90 === null
-                  ? '—'
-                  : fund.sortino_90 > 1
-                  ? 'İyi (>1)'
-                  : fund.sortino_90 > 0
-                  ? 'Pozitif'
-                  : 'Negatif'
-              }
-            />
-            <AdvMetric
-              labelNode={<Explainer term="calmar">Calmar (1Y)</Explainer>}
-              value={fund.calmar_1y?.toFixed(2)}
-              hint={
-                fund.calmar_1y === undefined || fund.calmar_1y === null
-                  ? '—'
-                  : fund.calmar_1y > 0.5
-                  ? 'Sağlam'
-                  : 'Düşük'
-              }
-            />
-            <AdvMetric
-              labelNode={<Explainer term="beta">Beta (1Y, BIST 30)</Explainer>}
-              value={fund.beta_1y?.toFixed(2)}
-              hint={
-                fund.beta_1y === undefined || fund.beta_1y === null
-                  ? '—'
-                  : Math.abs(fund.beta_1y) > 1.1
-                  ? 'Piyasaya hassas'
-                  : Math.abs(fund.beta_1y) < 0.3
-                  ? 'Bağımsız'
-                  : 'Orta'
-              }
-            />
-            <AdvMetric
-              labelNode={<Explainer term="real_return">Reel getiri (1Y)</Explainer>}
-              value={fund.real_return_1y !== undefined && fund.real_return_1y !== null ? formatPercent(fund.real_return_1y) : '—'}
-              hint="TÜFE'den arındırılmış"
-              positive={(fund.real_return_1y ?? 0) > 0}
-              negative={(fund.real_return_1y ?? 0) < 0}
-            />
-          </div>
-        </div>
-
         {monthly.months.length > 0 && (
-          <div className="panel p-6 md:col-span-2">
-            <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+          <div className="mt-4 panel p-5">
+            <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               <TrendingUp className="h-3.5 w-3.5" /> Aylık getiri (son 24 ay)
             </h3>
             <MonthlyHistogram data={monthly.months} />
           </div>
         )}
+      </FundSection>
 
-        {drawdown.points.length > 0 && (
-          <div className="panel p-6">
-            <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              <TrendingDown className="h-3.5 w-3.5 text-loss" />
-              <Explainer term="drawdown">Drawdown (1 yıl)</Explainer>
-            </h3>
-            <DrawdownChart data={drawdown.points} />
-          </div>
-        )}
+      <AdSlot placement="fon-top" />
 
-        {timeline.points.length > 1 && (
-          <div className="panel p-6 md:col-span-3">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                <Activity className="h-3.5 w-3.5 text-brand-400" /> Portföy DNA'sı (son 180 gün)
-              </h3>
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
-                {timeline.points.length} snapshot · dağılımın zamanla değişimi
-              </span>
+      {/* === PORTFÖY === */}
+      <FundSection
+        id="portfoy"
+        title="Portföy Dağılımı"
+        icon={<PieChart className="h-4 w-4" />}
+        subtitle="Varlık sınıfı dağılımı ve 180 günlük değişim"
+        defaultOpen
+      >
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="panel p-5 md:col-span-2">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Güncel dağılım</h3>
+              {portfolioSlices.length > 0 && (
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">son snapshot</span>
+              )}
             </div>
-            <PortfolioTimeline data={timeline.points} />
+            {portfolioSlices.length > 0 ? (
+              <PortfolioDonut data={portfolioSlices} />
+            ) : (
+              <div className="py-8 text-center text-sm text-muted-foreground">Portföy verisi henüz çekilmedi</div>
+            )}
+          </div>
+          {timeline.points.length > 1 && (
+            <div className="panel p-5 md:col-span-3">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <Activity className="h-3.5 w-3.5 text-brand-400" /> Portföy DNA'sı (son 180 gün)
+                </h3>
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
+                  {timeline.points.length} snapshot
+                </span>
+              </div>
+              <PortfolioTimeline data={timeline.points} />
+            </div>
+          )}
+        </div>
+      </FundSection>
+
+      {/* === İŞ YATIRIM TAVSİYESİ — kartın kendi branded header'ı var, FundSection'la sarmıyoruz === */}
+      {analystConsensus && analystConsensus.items.length > 0 && (
+        <div id="tavsiye" className="scroll-mt-24">
+          <AnalystConsensusCard {...analystConsensus} />
+        </div>
+      )}
+
+      {/* === RİSK === */}
+      <FundSection
+        id="risk"
+        title="Risk & Volatilite"
+        icon={<Shield className="h-4 w-4" />}
+        subtitle="TEFAS risk skoru, Sharpe/Sortino/Beta, drawdown"
+      >
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="panel p-5 md:col-span-1">
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">TEFAS Risk Skoru</h3>
+            <RiskGauge value={fund.risk_score ?? null} />
+            <div className="mt-5 space-y-3 border-t border-border/50 pt-4">
+              <InfoRow
+                icon={<Sparkles className="h-4 w-4 text-brand-400" />}
+                labelNode={<Explainer term="sharpe_90">Sharpe (90g)</Explainer>}
+                value={fund.sharpe_90?.toFixed(2) ?? '—'}
+                sub="Risk düzeltilmiş getiri"
+              />
+              <InfoRow
+                icon={<TrendingUp className="h-4 w-4 text-verdigris-400" />}
+                labelNode={<Explainer term="volatility">Volatilite (90g)</Explainer>}
+                value={fund.volatility_90 ? `${(fund.volatility_90 * 100).toFixed(1)}%` : '—'}
+                sub="Yıllıklandırılmış stddev"
+              />
+              <InfoRow
+                icon={<ArrowRight className="h-4 w-4 text-amber-400 rotate-[135deg]" />}
+                labelNode={<Explainer term="drawdown">Max Drawdown (1Y)</Explainer>}
+                value={fund.max_drawdown_1y ? formatPercent(fund.max_drawdown_1y) : '—'}
+                sub="En dip"
+              />
+            </div>
+          </div>
+          <div className="panel p-5 md:col-span-2">
+            <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <Activity className="h-3.5 w-3.5" /> İleri Metrikler
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              <AdvMetric
+                labelNode={<Explainer term="sortino">Sortino (90g)</Explainer>}
+                value={fund.sortino_90?.toFixed(2)}
+                hint={
+                  fund.sortino_90 === undefined || fund.sortino_90 === null ? '—'
+                    : fund.sortino_90 > 1 ? 'İyi (>1)'
+                    : fund.sortino_90 > 0 ? 'Pozitif' : 'Negatif'
+                }
+              />
+              <AdvMetric
+                labelNode={<Explainer term="calmar">Calmar (1Y)</Explainer>}
+                value={fund.calmar_1y?.toFixed(2)}
+                hint={
+                  fund.calmar_1y === undefined || fund.calmar_1y === null ? '—'
+                    : fund.calmar_1y > 0.5 ? 'Sağlam' : 'Düşük'
+                }
+              />
+              <AdvMetric
+                labelNode={<Explainer term="beta">Beta (1Y, BIST 30)</Explainer>}
+                value={fund.beta_1y?.toFixed(2)}
+                hint={
+                  fund.beta_1y === undefined || fund.beta_1y === null ? '—'
+                    : Math.abs(fund.beta_1y) > 1.1 ? 'Piyasaya hassas'
+                    : Math.abs(fund.beta_1y) < 0.3 ? 'Bağımsız' : 'Orta'
+                }
+              />
+              <AdvMetric
+                labelNode={<Explainer term="real_return">Reel getiri (1Y)</Explainer>}
+                value={fund.real_return_1y !== undefined && fund.real_return_1y !== null ? formatPercent(fund.real_return_1y) : '—'}
+                hint="TÜFE'den arındırılmış"
+                positive={(fund.real_return_1y ?? 0) > 0}
+                negative={(fund.real_return_1y ?? 0) < 0}
+              />
+            </div>
+          </div>
+          {drawdown.points.length > 0 && (
+            <div className="panel p-5 md:col-span-3">
+              <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <TrendingDown className="h-3.5 w-3.5 text-loss" />
+                <Explainer term="drawdown">Drawdown (1 yıl)</Explainer>
+              </h3>
+              <DrawdownChart data={drawdown.points} />
+            </div>
+          )}
+        </div>
+      </FundSection>
+
+      {/* === KATEGORİ KARŞILAŞTIRMA === */}
+      <FundSection
+        id="karsilastirma"
+        title="Kategori Karşılaştırması"
+        icon={<Trophy className="h-4 w-4" />}
+        subtitle="Yüzdelik dilimler, benchmark alpha, mevsimsellik, stres dönemleri"
+      >
+        <PercentileBadges code={fund.code} category={fund.category ?? null} initialData={percentile} />
+
+        {(advanced.bench_alpha['1y'] || advanced.bench_alpha['3m']) && (
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            {(['3m', '1y'] as const).map((p) => {
+              const a = advanced.bench_alpha[p];
+              if (!a) return null;
+              const over = a.alpha > 0;
+              return (
+                <div key={p} className="panel p-5">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                      Kategori içi sıralama ({p.toUpperCase()})
+                    </div>
+                    <div className={cn('font-mono text-lg font-semibold', over ? 'text-gain' : 'text-loss')}>
+                      {over ? '+' : ''}
+                      {formatPercent(a.alpha)}
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-end justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] text-muted-foreground">Bu fon</div>
+                      <div className="font-mono text-sm">{formatPercent(a.fundReturn)}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-[10px] text-muted-foreground">Kategori medyan</div>
+                      <div className="font-mono text-sm">{formatPercent(a.categoryMedian)}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[10px] text-muted-foreground">Yüzdelik</div>
+                      <div className="font-mono text-sm">%{a.percentile}</div>
+                    </div>
+                  </div>
+                  <div className="mt-3">
+                    <div className="relative h-1.5 rounded-full bg-secondary/40">
+                      <div
+                        className={cn('absolute inset-y-0 left-0 rounded-full', over ? 'bg-gain' : 'bg-loss')}
+                        style={{ width: `${a.percentile}%` }}
+                      />
+                    </div>
+                    <div className="mt-1 text-[10px] text-muted-foreground">
+                      {a.sampleSize} rakip fon içinden {a.percentile}%'lik dilime ait
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
-      </div>
+
+        {advanced.leakage && advanced.leakage.flagged && (
+          <div className="mt-4 panel border-amber-500/40 bg-amber-500/5 p-5">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-400">⚠</div>
+              <div>
+                <div className="text-sm font-semibold">Kategori sapması</div>
+                <p className="mt-1 text-xs text-muted-foreground">{advanced.leakage.reason}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {advanced.seasonality.length > 12 && (
+          <div className="mt-4 panel p-5">
+            <div className="mb-3">
+              <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <TrendingUp className="h-3.5 w-3.5 text-brand-400" /> Ay-bazlı mevsimsellik
+              </h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Her ayın tarihsel getirisi. Yılları üst üste koyup Ocak'ın, Mart'ın genel davranışını gör.
+              </p>
+            </div>
+            <SeasonalityHeatmap data={advanced.seasonality} />
+          </div>
+        )}
+
+        {advanced.stress_periods.length > 0 && (
+          <div className="mt-4 panel p-5">
+            <div className="mb-3">
+              <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <TrendingDown className="h-3.5 w-3.5 text-loss" /> Tarihsel stres dönemleri
+              </h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Fiyatın zirveden en sert düşüş periyotları
+              </p>
+            </div>
+            <table className="w-full text-sm">
+              <thead className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                <tr className="border-b border-border/50">
+                  <th className="py-2 text-left font-medium">Zirve</th>
+                  <th className="py-2 text-left font-medium">Dip</th>
+                  <th className="py-2 text-right font-medium">Süre</th>
+                  <th className="py-2 text-right font-medium">Düşüş</th>
+                </tr>
+              </thead>
+              <tbody>
+                {advanced.stress_periods.slice(0, 5).map((p, i) => (
+                  <tr key={i} className="border-b border-border/30 last:border-0">
+                    <td className="py-2.5 text-xs text-muted-foreground">{formatDate(p.start)}</td>
+                    <td className="py-2.5 text-xs text-muted-foreground">{formatDate(p.end)}</td>
+                    <td className="py-2.5 text-right tabular-nums text-muted-foreground">{p.days} gün</td>
+                    <td className="py-2.5 text-right font-mono text-loss">{formatPercent(p.drawdown)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </FundSection>
+
+      {/* === BİLGİ & KÜNYE === */}
+      <FundSection
+        id="bilgi"
+        title="Fon Bilgisi"
+        icon={<Info className="h-4 w-4" />}
+        subtitle="Künye, büyüklük, yatırımcı sayısı, AI özeti"
+      >
+        <div className="grid grid-cols-1 gap-4">
+          {(fund.isin || fund.kap_url || fund.trading_status) && (
+            <div className="panel p-5">
+              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Künye</h3>
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+                {fund.isin && <KunyeCell label="ISIN" value={fund.isin} mono />}
+                {fund.trading_status && <KunyeCell label="Durum" value={fund.trading_status} />}
+                {fund.trading_start && fund.trading_end && (
+                  <KunyeCell label="İşlem saati" value={`${fund.trading_start} – ${fund.trading_end}`} mono />
+                )}
+                {fund.buy_valor !== undefined && <KunyeCell label="Alış valörü" value={`T+${fund.buy_valor}`} mono />}
+                {fund.sell_valor !== undefined && <KunyeCell label="Satış valörü" value={`T+${fund.sell_valor}`} mono />}
+                {fund.kap_url && (
+                  <a
+                    href={fund.kap_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 self-end text-xs text-brand-400 hover:text-brand-300"
+                  >
+                    KAP Bilgi <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+          <div className="panel p-5">
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Büyüklük & akış</h3>
+            <div className="grid grid-cols-3 gap-4">
+              <Stat
+                icon={<Wallet className="h-4 w-4 text-brand-400" />}
+                labelNode={<Explainer term="aum">Fon büyüklüğü</Explainer>}
+                sublabel="Yönetilen Varlık Büyüklüğü"
+                value={formatCompact(fund.aum)}
+                change={fund.flow_1m}
+              />
+              <Stat
+                icon={<Users className="h-4 w-4 text-verdigris-400" />}
+                label="Yatırımcı"
+                value={formatNumber(fund.investor_count)}
+              />
+              <Stat
+                icon={<Calendar className="h-4 w-4 text-amber-400" />}
+                label="Takipteyiz"
+                sublabel={fund.first_seen ? `${formatDate(fund.first_seen)} tarihinden beri` : undefined}
+                value={`${Math.max(1, Math.round(((new Date(fund.last_seen ?? Date.now()).getTime() - new Date(fund.first_seen ?? Date.now()).getTime()) / 86_400_000)))} gün`}
+              />
+            </div>
+          </div>
+          <InvestorTrend code={fund.code} />
+          {aiSummary.summary && (
+            <div className="panel-highlight p-5">
+              <div className="mb-2 flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-brand-400" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">AI özet</span>
+              </div>
+              <p className="text-[15px] leading-relaxed text-foreground/90">{aiSummary.summary}</p>
+              <div className="mt-2 text-[10px] text-muted-foreground">
+                Otomatik üretilmiştir · yatırım tavsiyesi değildir
+              </div>
+            </div>
+          )}
+        </div>
+      </FundSection>
+
+      {/* === KAP BİLDİRİMLERİ === */}
+      <FundSection
+        id="bildirimler"
+        title="KAP Bildirimleri"
+        icon={<FileText className="h-4 w-4" />}
+        subtitle={`${disclosures.items.length} bildirim · portföy raporları, özel durum açıklamaları`}
+        badge={
+          disclosures.items.length > 0 ? (
+            <span className="rounded bg-muted/40 px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+              {disclosures.items.length}
+            </span>
+          ) : null
+        }
+      >
+        <KapDisclosuresCard
+          code={fund.code}
+          items={disclosures.items}
+          backfillTriggered={Boolean(disclosures.backfillTriggered)}
+        />
+      </FundSection>
 
       <RecordRecentFund code={fund.code} name={fund.name} />
 
-      <InvestorTrend code={fund.code} />
-
-      <PercentileBadges
-        code={fund.code}
-        category={fund.category ?? null}
-        initialData={percentile}
-      />
-
-      {analystConsensus && analystConsensus.items.length > 0 && (
-        <AnalystConsensusCard {...analystConsensus} />
-      )}
-
-      <KapDisclosuresCard
-        code={fund.code}
-        items={disclosures.items}
-        backfillTriggered={Boolean(disclosures.backfillTriggered)}
-      />
-
-      {/* AI summary (if configured) */}
-      {aiSummary.summary && (
-        <div className="panel-highlight mt-8 p-6">
-          <div className="mb-3 flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-brand-400" />
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              AI özet
-            </span>
-          </div>
-          <p className="text-[15px] leading-relaxed text-foreground/90">{aiSummary.summary}</p>
-          <div className="mt-3 text-[10px] text-muted-foreground">
-            Otomatik üretilmiştir · yatırım tavsiyesi değildir
-          </div>
-        </div>
-      )}
-
-      {/* Bench-alpha — percentile in category */}
-      {(advanced.bench_alpha['1y'] || advanced.bench_alpha['3m']) && (
-        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-          {(['3m', '1y'] as const).map((p) => {
-            const a = advanced.bench_alpha[p];
-            if (!a) return null;
-            const over = a.alpha > 0;
-            return (
-              <div key={p} className="panel p-5">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs uppercase tracking-wider text-muted-foreground">
-                    Kategori içi sıralama ({p.toUpperCase()})
-                  </div>
-                  <div className={cn('font-mono text-lg font-semibold', over ? 'text-gain' : 'text-loss')}>
-                    {over ? '+' : ''}
-                    {formatPercent(a.alpha)}
-                  </div>
-                </div>
-                <div className="mt-3 flex items-end justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] text-muted-foreground">Bu fon</div>
-                    <div className="font-mono text-sm">{formatPercent(a.fundReturn)}</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-[10px] text-muted-foreground">Kategori medyan</div>
-                    <div className="font-mono text-sm">{formatPercent(a.categoryMedian)}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-[10px] text-muted-foreground">Yüzdelik</div>
-                    <div className="font-mono text-sm">%{a.percentile}</div>
-                  </div>
-                </div>
-                <div className="mt-3">
-                  <div className="relative h-1.5 rounded-full bg-secondary/40">
-                    <div
-                      className={cn('absolute inset-y-0 left-0 rounded-full', over ? 'bg-gain' : 'bg-loss')}
-                      style={{ width: `${a.percentile}%` }}
-                    />
-                  </div>
-                  <div className="mt-1 text-[10px] text-muted-foreground">
-                    {a.sampleSize} rakip fon içinden {a.percentile}%'lik dilime ait
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Category leakage warning */}
-      {advanced.leakage && advanced.leakage.flagged && (
-        <div className="mt-6 panel border-amber-500/40 bg-amber-500/5 p-5">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-400">
-              ⚠
-            </div>
-            <div>
-              <div className="text-sm font-semibold">Kategori sapması</div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {advanced.leakage.reason}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Seasonality heatmap */}
-      {advanced.seasonality.length > 12 && (
-        <div className="mt-6 panel p-6">
-          <div className="mb-4">
-            <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              <TrendingUp className="h-3.5 w-3.5 text-brand-400" />
-              Ay-bazlı mevsimsellik
-            </h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Her ayın tarihsel getirisi. Yılları üst üste koyup Ocak'ın, Mart'ın genel davranışını gör.
-            </p>
-          </div>
-          <SeasonalityHeatmap data={advanced.seasonality} />
-        </div>
-      )}
-
-      {/* Stress test — worst drawdown periods */}
-      {advanced.stress_periods.length > 0 && (
-        <div className="mt-6 panel p-6">
-          <div className="mb-4">
-            <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              <TrendingDown className="h-3.5 w-3.5 text-loss" />
-              Tarihsel stres dönemleri
-            </h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Fiyatın zirveden en sert düşüş periyotları — gerçek drawdown gözlemi
-            </p>
-          </div>
-          <table className="w-full text-sm">
-            <thead className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              <tr className="border-b border-border/50">
-                <th className="py-2 text-left font-medium">Zirve</th>
-                <th className="py-2 text-left font-medium">Dip</th>
-                <th className="py-2 text-right font-medium">Süre</th>
-                <th className="py-2 text-right font-medium">Düşüş</th>
-              </tr>
-            </thead>
-            <tbody>
-              {advanced.stress_periods.slice(0, 5).map((p, i) => (
-                <tr key={i} className="border-b border-border/30 last:border-0">
-                  <td className="py-2.5 text-xs text-muted-foreground">{formatDate(p.start)}</td>
-                  <td className="py-2.5 text-xs text-muted-foreground">{formatDate(p.end)}</td>
-                  <td className="py-2.5 text-right tabular-nums text-muted-foreground">{p.days} gün</td>
-                  <td className="py-2.5 text-right font-mono text-loss">
-                    {formatPercent(p.drawdown)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Compare + Story + Export CTA */}
+      {/* Compare + Story + Export CTA (section dışı, her zaman görünür) */}
       <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-4">
         <Link
           href={`/hikaye/${fund.code}`}
           className="panel-highlight group relative flex flex-col justify-between overflow-hidden p-5 transition-all hover:-translate-y-0.5 md:col-span-2"
         >
           <div>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              yeni
-            </div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">yeni</div>
             <div className="mt-1 serif text-xl">
               {fund.code}'nın <span className="display-italic text-brand-400">hikayesi</span>
             </div>
@@ -683,22 +709,18 @@ export default async function FundDetailPage({
             Hikaye modunda aç →
           </div>
         </Link>
-
         <Link
           href={`/karsilastir?kodlar=${fund.code}`}
           className="panel group flex items-center justify-between p-5 transition-all hover:-translate-y-0.5 hover:border-brand-500/50"
         >
           <div>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              karşılaştır
-            </div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">karşılaştır</div>
             <div className="mt-1 serif text-lg">
               Başka fonla <span className="display-italic text-brand-400">karşılaştır</span>
             </div>
           </div>
           <ArrowRight className="h-5 w-5 text-muted-foreground transition-all group-hover:translate-x-1 group-hover:text-brand-400" />
         </Link>
-
         <ExportBox code={fund.code} fundName={fund.name} />
       </div>
 
