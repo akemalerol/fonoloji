@@ -229,6 +229,17 @@ await app.register(
     await inner.register(rateLimit, {
       max: 60,
       timeWindow: '1 minute',
+      // Next.js SSR aynı VPS'ten 127.0.0.1 üzerinden çağırıyor — tüm siteden
+      // gelen SSR tek bir bucket'ı paylaşırsa bir SSR sayfası (/en-iyi-fonlar/[yil]
+      // gibi limit=500'lük sorgular) diğerlerini 429'a itiyor. Loopback'i muaf tut.
+      allowList: (req) => {
+        const cf = req.headers['cf-connecting-ip'] as string | undefined;
+        // Gerçek kullanıcı her zaman cf-connecting-ip taşır (Cloudflare önde).
+        // CF header yoksa ve req.ip loopback ise → internal SSR çağrısı.
+        if (cf) return false;
+        const ip = req.ip ?? '';
+        return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+      },
       keyGenerator: (req) =>
         (req.headers['cf-connecting-ip'] as string) ||
         (req.headers['x-real-ip'] as string) ||
