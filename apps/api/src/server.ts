@@ -15,6 +15,7 @@ import { fundsRoute } from './routes/funds.js';
 import { insightsRoute } from './routes/insights.js';
 import { portfolioRoute } from './routes/portfolio.js';
 import { trackRoute } from './routes/track.js';
+import { seedAdPlacements } from './services/ads.js';
 import { logApiRequest } from './services/tracking.js';
 
 const app = Fastify({
@@ -281,7 +282,8 @@ app.get('/api/health', async () => {
 const port = Number(process.env.PORT ?? 4000);
 const host = process.env.HOST ?? '0.0.0.0';
 
-getDb();
+const db = getDb();
+seedAdPlacements(db);
 registerCron({
   info: (m) => app.log.info(m),
   error: (...args) => app.log.error(args),

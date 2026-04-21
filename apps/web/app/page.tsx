@@ -12,6 +12,7 @@ import { NumberTicker } from '@/components/magic/number-ticker';
 import { WordRotate } from '@/components/magic/word-rotate';
 import { api } from '@/lib/api';
 import { cn, formatCompact, formatPercent, formatPrice } from '@/lib/utils';
+import { AdSlot } from '@/components/ads/ad-slot';
 
 // Decorative hero animations — load after initial paint to protect LCP.
 const Meteors = dynamic(() => import('@/components/magic/meteors').then((m) => m.Meteors), {
@@ -152,6 +153,8 @@ export default async function HomePage() {
 
         </div>
       </section>
+
+      <div className="container"><AdSlot placement="home-hero" className="mx-auto max-w-5xl" /></div>
 
       {/* EDITORIAL LEAD */}
       <section className="container pt-12">
@@ -368,6 +371,8 @@ export default async function HomePage() {
         </div>
       </section>
 
+      <div className="container pt-12"><AdSlot placement="home-middle" className="mx-auto max-w-5xl" /></div>
+
       {/* EDITORIAL BREAK 2 */}
       <section className="container pt-24">
         <div className="mx-auto max-w-4xl">
@@ -391,6 +396,8 @@ export default async function HomePage() {
           ))}
         </div>
       </section>
+
+      <div className="container pt-12"><AdSlot placement="home-bottom" className="mx-auto max-w-5xl" /></div>
 
       {/* CTA SECTION */}
       <section className="container pb-24 pt-24">

@@ -5,6 +5,7 @@ import { planFor, PLANS } from '../auth/plans.js';
 import { findUserById, setCustomLimits, setDisabled, setEmailVerified, setPlan, type UserRecord } from '../auth/users.js';
 import { sendAdminBroadcast, sendContactReply } from '../services/mail.js';
 import { getSystemHealth } from '../services/systemHealth.js';
+import { AD_PLACEMENTS, listAds, updateAd } from '../services/ads.js';
 import { generateTweet, postTweet, queueTweet, type TweetContext } from '../services/x.js';
 
 const COOKIE_NAME = 'fonoloji_session';
@@ -924,6 +925,35 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
       )
       .all(...params, Math.min(Math.max(Number(limit) || 100, 1), 500));
     return { items: rows };
+  });
+
+  // === AdSense reklam yönetimi ===
+  app.get('/ads', async () => {
+    const db = getDb();
+    const items = listAds(db);
+    // UI tarafı için note'ları da ekle
+    const withMeta = items.map((it) => ({
+      ...it,
+      note: AD_PLACEMENTS.find((p) => p.placement === it.placement)?.note ?? '',
+    }));
+    return { items: withMeta };
+  });
+
+  const adUpdateSchema = z.object({
+    slot_id: z.string().max(64).optional(),
+    format: z.enum(['auto', 'fluid', 'rectangle', 'horizontal', 'vertical']).optional(),
+    enabled: z.union([z.literal(0), z.literal(1)]).optional(),
+    label: z.string().max(80).nullish(),
+  });
+
+  app.patch('/ads/:placement', async (req, reply) => {
+    const { placement } = req.params as { placement: string };
+    const parsed = adUpdateSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'Geçersiz veri' });
+    const db = getDb();
+    const updated = updateAd(db, placement, parsed.data);
+    if (!updated) return reply.code(404).send({ error: 'Yerleşim bulunamadı' });
+    return updated;
   });
 
   // Tek mail detayı — full HTML body göstermek için.

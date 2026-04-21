@@ -1,5 +1,6 @@
 import { Activity, ArrowUpDown, Flame, Rocket, Shield, Sparkles, TrendingUp, Waves } from 'lucide-react';
 import Link from 'next/link';
+import { AdSlot } from '@/components/ads/ad-slot';
 import { ChangePill } from '@/components/fx/change-pill';
 import { PortfolioChip } from '@/components/fx/portfolio-chip';
 import { CompanyLogo } from '@/components/site/company-logo';
@@ -193,6 +194,8 @@ export default async function FundsPage({
           paramKey="category"
         />
       </div>
+
+      <AdSlot placement="fonlar-top" className="!my-4" />
 
       <div className="overflow-x-auto rounded-xl border border-border bg-card/40">
         <table className="w-full min-w-[1000px] table-fixed text-sm">

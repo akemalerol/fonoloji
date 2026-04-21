@@ -1,4 +1,5 @@
 import { Activity, ArrowRight, Calendar, ExternalLink, Shield, Sparkles, TrendingDown, TrendingUp, Users, Wallet } from 'lucide-react';
+import { AdSlot } from '@/components/ads/ad-slot';
 import { ShareButton } from '@/components/site/share-button';
 import { RecordRecentFund } from '@/components/site/recently-viewed';
 import { CompanyLogo } from '@/components/site/company-logo';
@@ -305,6 +306,8 @@ export default async function FundDetailPage({
         </div>
         <PriceChart data={points} positive={periodReturn >= 0} />
       </div>
+
+      <AdSlot placement="fon-top" />
 
       <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-3">
         <div className="panel p-6 md:col-span-2">
@@ -692,6 +695,8 @@ export default async function FundDetailPage({
 
         <ExportBox code={fund.code} fundName={fund.name} />
       </div>
+
+      <AdSlot placement="fon-bottom" />
     </div>
   );
 }

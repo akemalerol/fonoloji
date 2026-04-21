@@ -435,6 +435,21 @@ export const SCHEMA_STATEMENTS: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_outgoing_emails_ts ON outgoing_emails(ts DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_outgoing_emails_to ON outgoing_emails(to_email, ts DESC)`,
+
+  // AdSense yerleşimleri — admin panelden yönetilir.
+  // placement = sabit kod (home-hero, fon-top, ...); slot_id = AdSense data-ad-slot.
+  `CREATE TABLE IF NOT EXISTS ad_slots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    placement TEXT NOT NULL UNIQUE,
+    label TEXT,
+    slot_id TEXT,
+    format TEXT NOT NULL DEFAULT 'auto',
+    enabled INTEGER NOT NULL DEFAULT 0,
+    impressions INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_ad_slots_placement ON ad_slots(placement)`,
 ];
 
 const ADDITIONAL_COLUMNS: Array<{ table: string; column: string; type: string }> = [

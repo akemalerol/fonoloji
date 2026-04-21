@@ -4,6 +4,7 @@ import { estimateFundNav } from '../services/liveEstimate.js';
 import { backfillFundKapDisclosures } from '../scripts/ingestKapDisclosures.js';
 import { runKapHoldingsIngest } from '../scripts/ingestKapHoldings.js';
 import { analyzePortfolio, computeFundOverlap, type FundInput } from '../services/portfolioAnalysis.js';
+import { getActiveAd, incrementImpression } from '../services/ads.js';
 
 // Per-process throttle — fund başına en fazla ayda 1 holdings refresh denenir.
 const holdingsBackfillTried = new Map<string, number>();
@@ -673,5 +674,16 @@ export const fundsRoute: FastifyPluginAsync = async (app) => {
         `${folded}%`,        // name prefix → next
       );
     return { items: rows };
+  });
+
+  // Public: belirli bir yerleşim için aktif reklamı döndür (admin tarafından ayarlı ise).
+  // Kapalıysa ya da slot_id boşsa null döner → site hiçbir şey render etmez.
+  app.get('/ads/:placement', async (req) => {
+    const { placement } = req.params as { placement: string };
+    const db = getDb();
+    const ad = getActiveAd(db, placement);
+    if (!ad) return { ad: null };
+    incrementImpression(db, placement);
+    return { ad: { placement: ad.placement, slot_id: ad.slot_id, format: ad.format } };
   });
 };

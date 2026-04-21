@@ -1,5 +1,6 @@
 import { ArrowRight, Building2, Calculator, Compass, Flame, LineChart, Network, Percent, Scale, Shield, Waves } from 'lucide-react';
 import Link from 'next/link';
+import { AdSlot } from '@/components/ads/ad-slot';
 import { BentoCard, BentoGrid } from '@/components/fx/bento';
 import { DotBackground } from '@/components/fx/grid-background';
 
@@ -118,6 +119,8 @@ export default function DiscoverPage() {
           </div>
         </div>
       </section>
+
+      <div className="container pt-8"><AdSlot placement="kesif-top" className="mx-auto max-w-5xl" /></div>
 
       <section className="container py-12">
         <BentoGrid>
