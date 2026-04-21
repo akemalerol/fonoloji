@@ -594,7 +594,7 @@ function TrailRow({ ip }: { ip: string }) {
   }, [ip]);
   return (
     <tr className="bg-muted/5">
-      <td colSpan={6} className="px-3 py-3">
+      <td colSpan={9} className="px-3 py-3">
         <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           IP {ip} — son 40 ziyaret
         </div>
@@ -624,25 +624,50 @@ function TrailRow({ ip }: { ip: string }) {
 
 // ---------- SAYFA İSTATİSTİKLERİ ----------
 
+interface PageIpRow {
+  ip: string;
+  pageviews: number;
+  unique_paths: number;
+  last_ts: number;
+  last_path: string | null;
+  country: string | null;
+  user_agent: string | null;
+  email: string | null;
+}
+
 interface PageStatsResp {
   windowHours: number;
   totals: { views: number; unique_ips: number };
   topPaths: Array<{ path: string; views: number; unique_ips: number }>;
   topReferers: Array<{ referer: string; c: number }>;
+  topCountries: Array<{ country: string; views: number; unique_ips: number }>;
+  topIps: PageIpRow[];
+  ipPagination: { page: number; pageSize: number; total: number; pageCount: number };
 }
 
 function PageStats() {
   const [data, setData] = React.useState<PageStatsResp | null>(null);
   const [hours, setHours] = React.useState(24);
   const [loading, setLoading] = React.useState(true);
+  const [ipPage, setIpPage] = React.useState(1);
+  const [drillIp, setDrillIp] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     setLoading(true);
-    fetch(`/admin-api/page-stats?hours=${hours}`, { credentials: 'include' })
+    fetch(`/admin-api/page-stats?hours=${hours}&ipPage=${ipPage}&ipPageSize=20`, { credentials: 'include' })
       .then((r) => r.json())
       .then(setData)
       .finally(() => setLoading(false));
+  }, [hours, ipPage]);
+
+  React.useEffect(() => {
+    setIpPage(1);
   }, [hours]);
+
+  const totalCountryViews = Math.max(
+    1,
+    (data?.topCountries ?? []).reduce((s, c) => s + c.views, 0),
+  );
 
   return (
     <div className="space-y-4">
@@ -665,6 +690,7 @@ function PageStats() {
           ))}
         </div>
       </div>
+
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-lg border border-border/60">
           <div className="border-b border-border/40 bg-muted/20 px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">
@@ -686,28 +712,151 @@ function PageStats() {
             </tbody>
           </table>
         </div>
+
         <div className="rounded-lg border border-border/60">
           <div className="border-b border-border/40 bg-muted/20 px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">
-            Referer kaynakları
+            Ülke dağılımı (bayrak)
           </div>
           <table className="w-full text-sm">
             <tbody>
-              {(data?.topReferers ?? []).map((r) => (
-                <tr key={r.referer} className="border-t border-border/40">
-                  <td className="px-3 py-2 text-xs truncate max-w-xs" title={r.referer}>
-                    {r.referer}
-                  </td>
-                  <td className="px-3 py-2 text-right text-xs">{r.c}</td>
-                </tr>
-              ))}
-              {(data?.topReferers ?? []).length === 0 && (
+              {(data?.topCountries ?? []).map((c) => {
+                const pct = Math.round((c.views / totalCountryViews) * 100);
+                return (
+                  <tr key={c.country} className="border-t border-border/40">
+                    <td className="px-3 py-1.5 text-sm">
+                      <span className="mr-2 text-base">{flagEmoji(c.country) ?? '🌐'}</span>
+                      <span className="font-mono text-xs text-muted-foreground">{c.country}</span>
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted/30">
+                          <div
+                            className="h-full rounded-full bg-brand-500/70"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <span className="w-8 text-right font-mono text-[10px] text-muted-foreground">{pct}%</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-1.5 text-right text-xs">{c.views}</td>
+                    <td className="px-3 py-1.5 text-right text-xs text-muted-foreground">{c.unique_ips} IP</td>
+                  </tr>
+                );
+              })}
+              {(data?.topCountries ?? []).length === 0 && (
                 <tr>
-                  <td className="px-3 py-4 text-center text-xs text-muted-foreground">Referer yok</td>
+                  <td className="px-3 py-4 text-center text-xs text-muted-foreground">Ülke verisi yok</td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+      </div>
+
+      <div className="rounded-lg border border-border/60">
+        <div className="flex items-center justify-between border-b border-border/40 bg-muted/20 px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">
+          <span>Ziyaretçi IP'leri — tıklayınca son sayfaları</span>
+          {data?.ipPagination && (
+            <span className="font-normal normal-case text-[10px]">{data.ipPagination.total} IP toplam</span>
+          )}
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              <th className="px-3 py-1.5 text-left">IP</th>
+              <th className="px-3 py-1.5 text-left">Ülke</th>
+              <th className="px-3 py-1.5 text-left">Kullanıcı</th>
+              <th className="px-3 py-1.5 text-left">Son sayfa</th>
+              <th className="px-3 py-1.5 text-right">Görüntüleme</th>
+              <th className="px-3 py-1.5 text-right">Farklı sayfa</th>
+              <th className="px-3 py-1.5 text-left">Tarayıcı</th>
+              <th className="px-3 py-1.5 text-right">Son</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(data?.topIps ?? []).map((ip) => (
+              <React.Fragment key={ip.ip}>
+                <tr
+                  className="cursor-pointer border-t border-border/40 hover:bg-muted/20"
+                  onClick={() => setDrillIp(drillIp === ip.ip ? null : ip.ip)}
+                >
+                  <td className="px-3 py-1.5 font-mono text-xs hover:text-brand-300">{ip.ip}</td>
+                  <td className="px-3 py-1.5"><FlagBadge country={ip.country} /></td>
+                  <td className="px-3 py-1.5 text-xs">
+                    {ip.email ? <span className="text-foreground">{ip.email}</span> : <span className="text-muted-foreground">anonim</span>}
+                  </td>
+                  <td className="px-3 py-1.5 font-mono text-xs">
+                    {ip.last_path ? (
+                      <a href={ip.last_path} target="_blank" rel="noreferrer" className="text-brand-400 hover:underline">
+                        {ip.last_path}
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-1.5 text-right text-xs">{ip.pageviews}</td>
+                  <td className="px-3 py-1.5 text-right text-xs text-muted-foreground">{ip.unique_paths}</td>
+                  <td className="px-3 py-1.5 text-xs text-muted-foreground">{uaShort(ip.user_agent)}</td>
+                  <td className="px-3 py-1.5 text-right text-xs text-muted-foreground">{agoShort(ip.last_ts)}</td>
+                </tr>
+                {drillIp === ip.ip && <TrailRow ip={ip.ip} />}
+              </React.Fragment>
+            ))}
+            {(data?.topIps ?? []).length === 0 && !loading && (
+              <tr>
+                <td colSpan={8} className="px-3 py-6 text-center text-xs text-muted-foreground">
+                  Bu pencerede ziyaretçi yok.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+        {data?.ipPagination && data.ipPagination.pageCount > 1 && (
+          <div className="flex items-center justify-between border-t border-border/40 bg-muted/10 px-3 py-2 text-xs">
+            <button
+              type="button"
+              disabled={ipPage <= 1}
+              onClick={() => setIpPage((p) => Math.max(1, p - 1))}
+              className="rounded-md bg-muted/40 px-2 py-1 hover:bg-muted/60 disabled:opacity-40"
+            >
+              ← Önceki
+            </button>
+            <span className="text-muted-foreground">
+              Sayfa {ipPage} / {data.ipPagination.pageCount}
+            </span>
+            <button
+              type="button"
+              disabled={ipPage >= data.ipPagination.pageCount}
+              onClick={() => setIpPage((p) => Math.min(data.ipPagination!.pageCount, p + 1))}
+              className="rounded-md bg-muted/40 px-2 py-1 hover:bg-muted/60 disabled:opacity-40"
+            >
+              Sonraki →
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-lg border border-border/60">
+        <div className="border-b border-border/40 bg-muted/20 px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">
+          Referer kaynakları
+        </div>
+        <table className="w-full text-sm">
+          <tbody>
+            {(data?.topReferers ?? []).map((r) => (
+              <tr key={r.referer} className="border-t border-border/40">
+                <td className="px-3 py-2 text-xs truncate max-w-xl" title={r.referer}>
+                  {r.referer}
+                </td>
+                <td className="px-3 py-2 text-right text-xs">{r.c}</td>
+              </tr>
+            ))}
+            {(data?.topReferers ?? []).length === 0 && (
+              <tr>
+                <td className="px-3 py-4 text-center text-xs text-muted-foreground">Referer yok</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );

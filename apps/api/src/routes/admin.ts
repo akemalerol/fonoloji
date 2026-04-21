@@ -665,9 +665,13 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
     return { ip, items: rows };
   });
 
-  // Sayfa ziyaret özeti: son N saatte en popüler path'ler.
+  // Sayfa ziyaret özeti: son N saatte en popüler path'ler + IP/ülke dağılımı.
   app.get('/page-stats', async (req) => {
-    const { hours = '24' } = req.query as { hours?: string };
+    const { hours = '24', ipPage = '1', ipPageSize = '20' } = req.query as {
+      hours?: string;
+      ipPage?: string;
+      ipPageSize?: string;
+    };
     const windowMs = Math.max(1, Math.min(720, Number(hours) || 24)) * 3_600_000;
     const cutoff = Date.now() - windowMs;
     const db = getDb();
@@ -697,7 +701,58 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
          FROM page_visits WHERE ts >= ?`,
       )
       .get(cutoff) as { views: number; unique_ips: number };
-    return { windowHours: windowMs / 3_600_000, totals, topPaths, topReferers };
+
+    const topCountries = db
+      .prepare(
+        `SELECT country, COUNT(*) as views, COUNT(DISTINCT ip) as unique_ips
+         FROM page_visits
+         WHERE ts >= ? AND country IS NOT NULL AND country != ''
+         GROUP BY country
+         ORDER BY views DESC
+         LIMIT 20`,
+      )
+      .all(cutoff);
+
+    const ps = Math.max(1, Math.min(100, Number(ipPageSize) || 20));
+    const pg = Math.max(1, Number(ipPage) || 1);
+    const offset = (pg - 1) * ps;
+    const ipTotal = (db
+      .prepare(`SELECT COUNT(DISTINCT ip) as c FROM page_visits WHERE ts >= ? AND ip IS NOT NULL`)
+      .get(cutoff) as { c: number }).c;
+    const topIps = db
+      .prepare(
+        `SELECT v.ip,
+                COUNT(*) as pageviews,
+                COUNT(DISTINCT v.path) as unique_paths,
+                MAX(v.ts) as last_ts,
+                (SELECT path FROM page_visits WHERE ip = v.ip AND ts >= ? ORDER BY ts DESC LIMIT 1) as last_path,
+                (SELECT country FROM page_visits WHERE ip = v.ip AND country IS NOT NULL ORDER BY ts DESC LIMIT 1) as country,
+                (SELECT user_agent FROM page_visits WHERE ip = v.ip AND ts >= ? ORDER BY ts DESC LIMIT 1) as user_agent,
+                (SELECT u.email FROM page_visits p2 LEFT JOIN users u ON u.id = p2.user_id
+                 WHERE p2.ip = v.ip AND p2.user_id IS NOT NULL ORDER BY p2.ts DESC LIMIT 1) as email
+         FROM page_visits v
+         WHERE v.ts >= ? AND v.ip IS NOT NULL
+         GROUP BY v.ip
+         ORDER BY pageviews DESC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(cutoff, cutoff, cutoff, ps, offset);
+    const ipPagination = {
+      page: pg,
+      pageSize: ps,
+      total: ipTotal,
+      pageCount: Math.max(1, Math.ceil(ipTotal / ps)),
+    };
+
+    return {
+      windowHours: windowMs / 3_600_000,
+      totals,
+      topPaths,
+      topReferers,
+      topCountries,
+      topIps,
+      ipPagination,
+    };
   });
 
   // API çağrı analitiği: yalnızca API anahtarı ile çağrılanları say (api_key_id IS NOT NULL).
