@@ -48,10 +48,19 @@ function recStyle(rec: string | null): { label: string; cls: string } {
   }
 }
 
+const TR_MONTHS = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+
+// KAP Portföy raporları bazen "2026-03" (ay), bazen "2026-03-25" (gün) olarak gelir.
+// İş Yatırım tarafı her zaman YYYY-MM-DD. Her iki formatı da doğru render et.
 function formatTrDate(iso: string | null): string {
   if (!iso) return '—';
-  const [y, m, d] = iso.split('-');
-  return `${d}.${m}.${y}`;
+  const parts = iso.split('-');
+  const y = parts[0];
+  const mIdx = Number(parts[1]);
+  const d = parts[2];
+  if (!y || !Number.isFinite(mIdx) || mIdx < 1 || mIdx > 12) return iso;
+  if (d) return `${d}.${String(mIdx).padStart(2, '0')}.${y}`;
+  return `${TR_MONTHS[mIdx - 1]} ${y}`;
 }
 
 export function AnalystConsensusCard(props: Props) {

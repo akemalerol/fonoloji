@@ -67,7 +67,7 @@ interface ParsedHolding {
 
 async function kapFetch<T>(path: string, body?: unknown): Promise<T> {
   const url = `${KAP_API}/${path}`;
-  const args = ['-sL', '--max-time', '30', '-A', UA,
+  const args = ['-sL', '-w', '\n__HTTP__:%{http_code}', '--max-time', '30', '-A', UA,
     '-H', 'Accept-Language: tr',
     '-H', 'Content-Type: application/json',
     '-H', 'Accept: application/json',
@@ -76,17 +76,47 @@ async function kapFetch<T>(path: string, body?: unknown): Promise<T> {
     args.push('-X', 'POST', '-d', JSON.stringify(body));
   }
   args.push(url);
-  const { stdout } = await execFileAsync('curl', args, { maxBuffer: 10_000_000 });
-  // Gerçek blok: KAP HTML sayfası döner (JSON değil). Önce JSON parse dene;
-  // olmazsa blok ya da bozuk yanıt. Metin içeriğinde 'engellenmiştir' geçmesi
-  // false positive — finansal raporlarda ('işlemler engellenmiştir' vb.) sık geçen kelime.
+  let stdout: string;
   try {
-    return JSON.parse(stdout) as T;
+    const res = await execFileAsync('curl', args, { maxBuffer: 10_000_000 });
+    stdout = res.stdout;
+  } catch (err) {
+    // curl exit kodu != 0 — timeout, DNS, network. Uzun "Command failed: curl ..."
+    // dump'ı log'u kirletir; kısa ve anlamlı bir hata fırlat.
+    const e = err as { code?: number; signal?: string; stderr?: string };
+    const code = e.code ?? 'err';
+    const hint =
+      code === 28 ? 'timeout'
+      : code === 6 ? 'dns fail'
+      : code === 7 ? 'connection refused'
+      : code === 35 ? 'tls handshake'
+      : e.signal ? `signal ${e.signal}`
+      : `exit ${code}`;
+    throw new Error(`KAP ağ hatası (${hint})`);
+  }
+
+  // HTTP kodunu ayrıştır
+  const httpMatch = stdout.match(/\n__HTTP__:(\d+)$/);
+  const httpCode = httpMatch ? Number(httpMatch[1]) : 0;
+  const body_ = httpMatch ? stdout.slice(0, httpMatch.index) : stdout;
+
+  if (httpCode === 403 || httpCode === 429) {
+    throw new Error(`KAP erişim engeli (HTTP ${httpCode})`);
+  }
+  if (httpCode >= 500) {
+    throw new Error(`KAP sunucu hatası (HTTP ${httpCode})`);
+  }
+  if (httpCode !== 200) {
+    throw new Error(`KAP beklenmedik HTTP ${httpCode}`);
+  }
+
+  try {
+    return JSON.parse(body_) as T;
   } catch {
-    if (stdout.includes('IP adresiniz') || stdout.includes('Access Denied') || stdout.startsWith('<')) {
-      throw new Error('KAP rate limit — IP engellenmiş, bekleniyor');
+    if (body_.includes('IP adresiniz') || body_.includes('Access Denied') || body_.startsWith('<')) {
+      throw new Error('KAP erişim engeli (IP bloğu)');
     }
-    throw new Error(`KAP yanıtı parse edilemedi: ${stdout.slice(0, 200)}`);
+    throw new Error(`KAP yanıtı parse edilemedi`);
   }
 }
 
@@ -361,8 +391,16 @@ export async function runKapHoldingsIngest(overrides?: { months?: number; fundCo
 
   let totalHoldings = 0;
   let failed = 0;
+  let consecutiveKapErrors = 0;
 
   for (const disc of disclosures) {
+    // KAP art arda engel/ağ hatası veriyorsa bu çalıştırmayı bırak — bir sonraki
+    // cron döngüsünde tekrar dener. Aksi hâlde log'u spam'ler.
+    if (consecutiveKapErrors >= 5) {
+      console.warn(`[kap-holdings] Ardışık 5 KAP hatası — çalıştırma bırakılıyor, sonraki döngüde tekrar denenecek`);
+      break;
+    }
+
     const reportDate = reportDateFromDisclosure(disc);
 
     // Skip if already ingested
@@ -440,14 +478,22 @@ export async function runKapHoldingsIngest(overrides?: { months?: number; fundCo
       txn();
 
       totalHoldings += holdings.length;
+      consecutiveKapErrors = 0;
       console.log(`    ✓ ${holdings.length} holding kaydedildi`);
 
       // Rate limit — KAP blocks aggressive scraping
       await new Promise(r => setTimeout(r, 3000));
     } catch (err) {
-      console.warn(`  ${disc.fundCode} ${reportDate} — hata: ${(err as Error).message}`);
+      const msg = (err as Error).message ?? 'unknown';
+      const isKap = msg.startsWith('KAP ');
+      console.warn(`  ${disc.fundCode} ${reportDate} — hata: ${msg}`);
       failed++;
+      if (isKap) consecutiveKapErrors++; else consecutiveKapErrors = 0;
     }
+
+    // Her başarılı işlemde consecutive sayacı sıfırlanır (başarılı yol zaten
+    // yukarıda totalHoldings artırıyor, buraya try-blok dışında düşmezsek reset
+    // gerekmez — success path try içinde tamamlanınca bir sonraki iterasyona geçer)
   }
 
   console.log(`\n[kap-holdings] Tamamlandı: ${disclosures.length} bildirim, ${totalHoldings} holding, ${failed} başarısız`);
