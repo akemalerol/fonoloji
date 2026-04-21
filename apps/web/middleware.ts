@@ -147,6 +147,6 @@ export function middleware(req: NextRequest) {
 // tarafında onRequest hook ile uygulanıyor (apps/api/src/server.ts).
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|api/|admin-api/|auth/|v1/|embed/|.*\\.(?:xml|txt|png|jpg|svg|ico|webp|avif|css|js|woff|woff2)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api/|admin-api/|auth/|v1/|embed/|hooks/|.*\\.(?:xml|txt|png|jpg|svg|ico|webp|avif|css|js|woff|woff2)$).*)',
   ],
 };

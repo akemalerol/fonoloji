@@ -16,6 +16,37 @@ import { runPortfolioIngest } from '../scripts/ingestPortfolio.js';
 import { runAlertChecker, runFundChangeDetector, runPeriodSummary, runWatchlistDigest, runWeeklyDigest } from './alerts.js';
 import { purgeOldTracking } from '../services/tracking.js';
 
+// Next.js ISR cache'ini ingest sonrası invalidate eder. Aksi hâlde stale-while-revalidate
+// kurgusu gereği ilk ziyaretçi 60sn önceki sürümü görür. Hata sessizce yutulur —
+// ingest'in başarılı sayılması için webhook'un çalışması zorunlu değil.
+async function triggerRevalidate(log: { info: (m: string) => void; error: (...a: unknown[]) => void }): Promise<void> {
+  const secret = process.env.FONOLOJI_REVALIDATE_SECRET;
+  if (!secret) return; // env yoksa sessiz geç
+  const url = process.env.FONOLOJI_WEB_URL ?? 'http://127.0.0.1:3000';
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(`${url}/hooks/revalidate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${secret}`,
+        'User-Agent': 'fonoloji-revalidate/1',
+      },
+      body: JSON.stringify({ paths: ['/'], layout: true }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) {
+      log.error(`[cron] revalidate webhook HTTP ${res.status}`);
+    } else {
+      log.info('[cron] revalidate webhook OK');
+    }
+  } catch (err) {
+    log.error('[cron] revalidate webhook hata:', err);
+  }
+}
+
 export function registerCron(log: { info: (msg: string) => void; error: (...args: unknown[]) => void }): void {
   if (process.env.FONOLOJI_DISABLE_CRON === '1') {
     log.info('[cron] Disabled via env');
@@ -32,6 +63,7 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
       recomputeDailySummary(db);
       recomputeCategoryStats(db);
       log.info(`[cron] ${label} tamamlandı`);
+      await triggerRevalidate(log);
     } catch (err) {
       log.error(`[cron] ${label} hata:`, err);
     }
