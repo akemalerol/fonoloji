@@ -11,6 +11,7 @@ import { PLANS } from './auth/plans.js';
 import { adminRoute } from './routes/admin.js';
 import { authRoute } from './routes/auth.js';
 import { contactRoute } from './routes/contact.js';
+import { brokerReportsRoute } from './routes/brokerReports.js';
 import { fundsRoute } from './routes/funds.js';
 import { insightsRoute } from './routes/insights.js';
 import { portfolioRoute } from './routes/portfolio.js';
@@ -65,7 +66,9 @@ await app.register(helmet, {
         'https://*.googlesyndication.com',
         'https://*.doubleclick.net',
       ],
-      frameAncestors: ["'none'"],
+      // 'self' — kendi sayfalarımız PDF'leri iframe'de gömebilsin
+      // (ör. /kesifler/analist-raporlari). Diğer siteler blokta.
+      frameAncestors: ["'self'"],
       baseUri: ["'self'"],
       formAction: ["'self'"],
       upgradeInsecureRequests: [],
@@ -255,6 +258,7 @@ await app.register(
     await inner.register(fundsRoute);
     await inner.register(insightsRoute);
     await inner.register(contactRoute);
+    await inner.register(brokerReportsRoute);
   },
   { prefix: '/api' },
 );

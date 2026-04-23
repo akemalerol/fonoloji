@@ -9,16 +9,22 @@ import { AD_PLACEMENTS, listAds, updateAd } from '../services/ads.js';
 import { generateTweet, postTweet, queueTweet, type TweetContext } from '../services/x.js';
 import { runIsyatirimIngest } from '../scripts/ingestIsyatirimAnalysts.js';
 import { runYkyatirimIngest } from '../scripts/ingestYkyatirim.js';
+import { runZiraatIngest } from '../scripts/ingestZiraat.js';
+import { runGarantiIngest } from '../scripts/ingestGaranti.js';
 
 // Yeni broker ingest'leri buraya eklendikçe admin paneli otomatik butona kavuşur.
 const BROKER_RUNNERS: Record<string, (opts: { trigger: 'cron' | 'manual' }) => Promise<unknown>> = {
   isyatirim: runIsyatirimIngest,
   ykyatirim: runYkyatirimIngest,
+  ziraatyatirim: runZiraatIngest,
+  garantibbvayatirim: runGarantiIngest,
 };
 
 const BROKER_LABELS: Record<string, string> = {
   isyatirim: 'İş Yatırım',
   ykyatirim: 'Yapı Kredi Yatırım',
+  ziraatyatirim: 'Ziraat Yatırım',
+  garantibbvayatirim: 'Garanti BBVA Yatırım',
 };
 
 const COOKIE_NAME = 'fonoloji_session';

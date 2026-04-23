@@ -15,6 +15,8 @@ import { runEstimates, verifyEstimates } from '../scripts/navEstimateDaily.js';
 import { runPortfolioIngest } from '../scripts/ingestPortfolio.js';
 import { runIsyatirimIngest } from '../scripts/ingestIsyatirimAnalysts.js';
 import { runYkyatirimIngest } from '../scripts/ingestYkyatirim.js';
+import { runZiraatIngest } from '../scripts/ingestZiraat.js';
+import { runGarantiIngest } from '../scripts/ingestGaranti.js';
 import { runAlertChecker, runFundChangeDetector, runPeriodSummary, runWatchlistDigest, runWeeklyDigest } from './alerts.js';
 import { purgeOldTracking } from '../services/tracking.js';
 
@@ -221,6 +223,33 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
       log.info(`[cron] YKY: ${r.total} hisse, ${r.tagged} yazıldı, ${r.errors} hata`);
     } catch (err) {
       log.error('[cron] YKY hata:', err);
+    }
+  }, { timezone: 'Europe/Istanbul' });
+
+  // Ziraat Yatırım Hisse Öneri Portföyü — ayın 1. ve 15'inde 09:00 TR.
+  // PDF aylık yayınlanıyor; "hep en güncel PDF'i çek" mantığıyla iki kez tarıyoruz —
+  // ay içi güncelleme olursa 15'inde yakalanır.
+  cron.schedule('0 9 1,15 * *', async () => {
+    log.info('[cron] Ziraat öneri portföyü ingest başlıyor');
+    try {
+      const r = await runZiraatIngest({ trigger: 'cron' });
+      log.info(`[cron] Ziraat: ${r.total} hisse, asOf=${r.asOfDate}`);
+    } catch (err) {
+      log.error('[cron] Ziraat hata:', err);
+    }
+  }, { timezone: 'Europe/Istanbul' });
+
+  // Garanti BBVA Yatırım Model Portföy — hafta içi her gün 11:30 TR.
+  // PDF genelde Pazartesi/Çarşamba yayınlanıyor (DD.MM.YYYY formatında URL);
+  // ingest bugünden 21 gün geriye tarayıp ilk 200 bulunan PDF'i alır, yani
+  // yeni rapor çıktığı gün otomatik yakalanır — diğer günler 404'te durur.
+  cron.schedule('30 11 * * 1-5', async () => {
+    log.info('[cron] Garanti BBVA model portföy ingest başlıyor');
+    try {
+      const r = await runGarantiIngest({ trigger: 'cron' });
+      log.info(`[cron] Garanti: ${r.total} hisse, asOf=${r.asOfDate}`);
+    } catch (err) {
+      log.error('[cron] Garanti hata:', err);
     }
   }, { timezone: 'Europe/Istanbul' });
 

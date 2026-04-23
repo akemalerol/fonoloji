@@ -52,9 +52,36 @@ interface Props {
 }
 
 // Kurumların görünen adları ve logoları. Yeni broker eklendikçe buraya ekle.
-const BROKER_META: Record<string, { label: string; shortLabel: string; logo?: string }> = {
-  isyatirim: { label: 'İş Yatırım', shortLabel: 'İş', logo: '/brand/isyatirim-logo.svg' },
-  ykyatirim: { label: 'Yapı Kredi Yatırım', shortLabel: 'YKY' },
+// bgClass: logonun arka planı — YKY logosu beyaz olduğu için brand lacivert,
+// diğerleri beyaz.
+const BROKER_META: Record<
+  string,
+  { label: string; shortLabel: string; logo?: string; bgClass?: string }
+> = {
+  isyatirim: {
+    label: 'İş Yatırım',
+    shortLabel: 'İş',
+    logo: '/brand/isyatirim-logo.svg',
+    bgClass: 'bg-white',
+  },
+  ykyatirim: {
+    label: 'Yapı Kredi Yatırım',
+    shortLabel: 'YKY',
+    logo: '/brand/ykyatirim-logo.svg',
+    bgClass: 'bg-[#003aa6]',
+  },
+  ziraatyatirim: {
+    label: 'Ziraat Yatırım',
+    shortLabel: 'Ziraat',
+    logo: '/brand/ziraatyatirim-logo.png',
+    bgClass: 'bg-white',
+  },
+  garantibbvayatirim: {
+    label: 'Garanti BBVA Yatırım',
+    shortLabel: 'Garanti',
+    logo: '/brand/garantibbvayatirim-logo.svg',
+    bgClass: 'bg-white',
+  },
 };
 
 function brokerLabel(key: string): string {
@@ -136,7 +163,10 @@ export function AnalystConsensusCard(props: Props) {
                   return (
                     <div
                       key={b}
-                      className="flex h-12 w-24 items-center justify-center rounded-lg bg-white p-2 shadow-sm ring-1 ring-border/40"
+                      className={cn(
+                        'flex h-12 w-24 items-center justify-center rounded-lg p-2 shadow-sm ring-1 ring-border/40',
+                        meta.bgClass ?? 'bg-white',
+                      )}
                       title={meta.label}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}

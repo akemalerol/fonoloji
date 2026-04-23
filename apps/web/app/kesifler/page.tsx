@@ -1,4 +1,4 @@
-import { ArrowRight, Building2, Calculator, Compass, Flame, LineChart, Network, Percent, Scale, Shield, Waves } from 'lucide-react';
+import { ArrowRight, Building2, Calculator, Compass, FileText, Flame, LineChart, Network, Percent, Scale, Shield, Waves } from 'lucide-react';
 import Link from 'next/link';
 import { AdSlot } from '@/components/ads/ad-slot';
 import { BentoCard, BentoGrid } from '@/components/fx/bento';
@@ -94,6 +94,14 @@ const CARDS = [
     icon: Percent,
     colSpan: 3 as const,
     gradient: 'from-amber-500/15 via-rose-500/5 to-brand-500/10',
+  },
+  {
+    href: '/kesifler/analist-raporlari',
+    title: 'Analist Raporları',
+    desc: '4 aracı kurumun (İş Yatırım, YKY, Ziraat, Garanti BBVA) güncel hisse tavsiyeleri ve hedef fiyatları — tek yerden.',
+    icon: FileText,
+    colSpan: 6 as const,
+    gradient: 'from-[#003aa6]/15 via-brand-500/5 to-verdigris-500/10',
   },
 ];
 

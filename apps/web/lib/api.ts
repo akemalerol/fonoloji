@@ -435,4 +435,16 @@ export const api = {
         targetRange: { min: number | null; max: number | null; avg: number | null } | null;
       }>;
     }>(`/api/funds/${encodeURIComponent(code)}/analyst-consensus`),
+
+  brokerReports: () =>
+    fetchJson<{
+      items: Array<{
+        broker: string;
+        label: string;
+        kind: 'native' | 'generated';
+        cadence: string;
+        stockCount: number;
+        asOfDate: string | null;
+      }>;
+    }>(`/api/broker-reports`),
 };
