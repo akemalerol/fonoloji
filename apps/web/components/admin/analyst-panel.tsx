@@ -4,8 +4,10 @@ import { AlertCircle, CheckCircle2, Clock, Loader2, PlayCircle, RefreshCw, Searc
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 
-// İş Yatırım çağrı geçmişi + güncel hisse tablosu + manuel tetikleme paneli.
-// Admin panelinde ayrı sekme olarak yaşar.
+// Multi-broker analist ingest paneli — İş Yatırım, Yapı Kredi Yatırım vb. aracı
+// kurumların çağrı geçmişi + hisse tablosu + manuel tetikleme. Yeni broker
+// eklendiğinde API tarafındaki BROKER_RUNNERS map'ine satır eklemek yeterli —
+// bu panel otomatik algılar.
 
 interface Run {
   id: number;
@@ -26,14 +28,32 @@ interface Stock {
   close_price: number | null;
   target_price: number | null;
   potential_pct: number | null;
+  recommendation: string | null;
   pe_ratio: number | null;
   market_cap_mn_tl: number | null;
-  recommendation: string | null;
+  weight_pct: number | null;
+  entry_date: string | null;
+  report_title: string | null;
+  report_url: string | null;
   as_of_date: string;
   updated_at: number;
 }
 
+interface BrokerSummary {
+  broker: string;
+  label: string;
+  stockCount: number;
+  withTarget: number;
+  withRec: number;
+  asOfDate: string | null;
+  lastRun: number | null;
+  lastStatus: string | null;
+  hasRunner: boolean;
+}
+
 interface RunsResp {
+  broker: string;
+  label: string;
   items: Run[];
   stats: { total_runs: number; ok: number; failed: number; last_run: number | null };
   latest: { stocks: number; as_of_date: string | null };
@@ -62,15 +82,24 @@ function formatCompactMn(v: number | null): string {
 
 function recStyle(rec: string | null): { label: string; cls: string } {
   switch (rec) {
-    case 'AL': return { label: 'AL', cls: 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30' };
-    case 'SAT': return { label: 'SAT', cls: 'bg-rose-500/15 text-rose-300 ring-1 ring-rose-500/30' };
-    case 'TUT': return { label: 'TUT', cls: 'bg-amber-500/15 text-amber-200 ring-1 ring-amber-500/30' };
-    case 'GÖZDEN GEÇİRİLİYOR': return { label: 'GG', cls: 'bg-sky-500/15 text-sky-300 ring-1 ring-sky-500/30' };
-    default: return { label: '—', cls: 'bg-muted/30 text-muted-foreground' };
+    case 'AL':
+    case 'EÜ':
+      return { label: rec, cls: 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30' };
+    case 'SAT':
+    case 'EA':
+      return { label: rec, cls: 'bg-rose-500/15 text-rose-300 ring-1 ring-rose-500/30' };
+    case 'TUT':
+      return { label: 'TUT', cls: 'bg-amber-500/15 text-amber-200 ring-1 ring-amber-500/30' };
+    case 'GÖZDEN GEÇİRİLİYOR':
+      return { label: 'GG', cls: 'bg-sky-500/15 text-sky-300 ring-1 ring-sky-500/30' };
+    default:
+      return { label: '—', cls: 'bg-muted/30 text-muted-foreground' };
   }
 }
 
 export function AnalystPanel() {
+  const [brokers, setBrokers] = React.useState<BrokerSummary[]>([]);
+  const [selected, setSelected] = React.useState<string>('isyatirim');
   const [runs, setRuns] = React.useState<RunsResp | null>(null);
   const [stocks, setStocks] = React.useState<Stock[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -79,13 +108,21 @@ export function AnalystPanel() {
   const [view, setView] = React.useState<'runs' | 'stocks'>('runs');
   const [error, setError] = React.useState<string | null>(null);
 
-  const loadRuns = React.useCallback(async () => {
-    const res = await fetch('/admin-api/isyatirim/runs?limit=50', { credentials: 'include' });
+  const loadBrokers = React.useCallback(async () => {
+    const res = await fetch('/admin-api/brokers', { credentials: 'include' });
+    if (res.ok) {
+      const d = await res.json();
+      setBrokers(d.items ?? []);
+    }
+  }, []);
+
+  const loadRuns = React.useCallback(async (broker: string) => {
+    const res = await fetch(`/admin-api/brokers/${broker}/runs?limit=50`, { credentials: 'include' });
     if (res.ok) setRuns(await res.json());
   }, []);
 
-  const loadStocks = React.useCallback(async (query = '') => {
-    const url = `/admin-api/isyatirim/stocks?limit=200${query ? `&q=${encodeURIComponent(query)}` : ''}`;
+  const loadStocks = React.useCallback(async (broker: string, query = '') => {
+    const url = `/admin-api/brokers/${broker}/stocks?limit=200${query ? `&q=${encodeURIComponent(query)}` : ''}`;
     const res = await fetch(url, { credentials: 'include' });
     if (res.ok) {
       const d = await res.json();
@@ -94,27 +131,36 @@ export function AnalystPanel() {
   }, []);
 
   React.useEffect(() => {
-    Promise.all([loadRuns(), loadStocks()]).finally(() => setLoading(false));
-  }, [loadRuns, loadStocks]);
+    loadBrokers().finally(() => setLoading(false));
+  }, [loadBrokers]);
+
+  React.useEffect(() => {
+    if (!selected) return;
+    Promise.all([loadRuns(selected), loadStocks(selected)]);
+  }, [selected, loadRuns, loadStocks]);
 
   React.useEffect(() => {
     const t = setInterval(() => {
-      // "running" varsa 5 sn'de bir, yoksa 30sn
       const hasRunning = runs?.items.some((r) => r.status === 'running');
-      if (hasRunning) loadRuns();
+      if (hasRunning) loadRuns(selected);
     }, 5000);
     return () => clearInterval(t);
-  }, [runs, loadRuns]);
+  }, [runs, selected, loadRuns]);
 
   const trigger = async () => {
     setTriggering(true);
     setError(null);
     try {
-      const res = await fetch('/admin-api/isyatirim/run', { method: 'POST', credentials: 'include' });
+      const res = await fetch(`/admin-api/brokers/${selected}/run`, {
+        method: 'POST',
+        credentials: 'include',
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Tetiklenemedi');
-      // 1sn sonra refresh
-      setTimeout(loadRuns, 1000);
+      setTimeout(() => {
+        loadRuns(selected);
+        loadBrokers();
+      }, 1000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Hata');
     } finally {
@@ -124,10 +170,11 @@ export function AnalystPanel() {
 
   const onSearch = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    loadStocks(q);
+    loadStocks(selected, q);
   };
 
   const hasRunning = runs?.items.some((r) => r.status === 'running');
+  const currentBroker = brokers.find((b) => b.broker === selected);
 
   if (loading) {
     return (
@@ -139,22 +186,48 @@ export function AnalystPanel() {
 
   return (
     <div className="space-y-4">
+      {/* Broker chip seçici */}
+      <div className="flex flex-wrap gap-2">
+        {brokers.map((b) => (
+          <button
+            key={b.broker}
+            onClick={() => setSelected(b.broker)}
+            className={cn(
+              'inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition',
+              selected === b.broker
+                ? 'border-brand-500 bg-brand-500/10 text-foreground'
+                : 'border-border/60 bg-card/30 text-muted-foreground hover:border-border/90 hover:text-foreground',
+            )}
+          >
+            <span className="font-semibold">{b.label}</span>
+            <span className="text-[10px] opacity-80">
+              {b.stockCount} hisse
+              {b.asOfDate && ` · ${b.asOfDate}`}
+            </span>
+            {!b.hasRunner && (
+              <span className="rounded bg-muted/50 px-1 text-[9px] uppercase">read-only</span>
+            )}
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-border/60 bg-card/40 p-4">
         <div>
           <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            İş Yatırım Analist İngest
+            {currentBroker?.label ?? selected} analist ingest
           </div>
           <div className="mt-1 text-base">
             {runs?.latest.stocks ?? 0} hisse · son {runs?.latest.as_of_date ?? '—'} tarihli
           </div>
           <div className="mt-0.5 text-[11px] text-muted-foreground">
-            Toplam {runs?.stats.total_runs ?? 0} sorgu · {runs?.stats.ok ?? 0} ok · {runs?.stats.failed ?? 0} hata
+            Toplam {runs?.stats.total_runs ?? 0} sorgu · {runs?.stats.ok ?? 0} ok ·{' '}
+            {runs?.stats.failed ?? 0} hata
             {runs?.stats.last_run && ` · son: ${formatDateTime(runs.stats.last_run)}`}
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={loadRuns}
+            onClick={() => loadRuns(selected)}
             className="inline-flex items-center gap-1.5 rounded-md bg-muted/30 px-3 py-2 text-xs hover:bg-muted/50"
             title="Listeyi yenile"
           >
@@ -162,10 +235,10 @@ export function AnalystPanel() {
           </button>
           <button
             onClick={trigger}
-            disabled={triggering || hasRunning}
+            disabled={triggering || hasRunning || currentBroker?.hasRunner === false}
             className={cn(
               'inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-semibold text-background transition',
-              triggering || hasRunning
+              triggering || hasRunning || currentBroker?.hasRunner === false
                 ? 'bg-muted/40 text-muted-foreground'
                 : 'bg-brand-500 hover:bg-brand-400',
             )}
@@ -272,7 +345,7 @@ export function AnalystPanel() {
                 <tr>
                   <td colSpan={8} className="px-3 py-12 text-center text-sm text-muted-foreground">
                     <Clock className="mx-auto mb-2 h-6 w-6 opacity-40" />
-                    Henüz kayıtlı sorgu yok. "Şimdi Çek" ile başlat.
+                    Henüz kayıtlı sorgu yok. &quot;Şimdi Çek&quot; ile başlat.
                   </td>
                 </tr>
               )}

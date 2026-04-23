@@ -7,10 +7,20 @@
  * Strateji:
  *   1. Geniş criteria ile tüm hisseleri tek POST'ta çek (fiyat/hedef/potansiyel/F/K/piyasa değeri)
  *   2. AL/SAT/TUT/GÖZDEN GEÇİRİLİYOR filtreleriyle 4 ek POST — her hisseye öneri etiketi iliştir
- *   3. Upsert → isyatirim_stocks tablosu
+ *   3. Upsert → isyatirim_stocks (legacy) + broker_recommendations (broker='isyatirim')
+ *
+ * Dual-write: eski `isyatirim_stocks` tablosu admin paneli için tutuluyor; yeni
+ * `broker_recommendations` tablosu multi-broker konsensüs için besleniyor.
  */
 
 import { getDb } from '../db/index.js';
+import {
+  type BrokerRecommendation,
+  startBrokerRun,
+  upsertBrokerRecommendations,
+} from './brokerIngestUtils.js';
+
+export const ISYATIRIM_BROKER_KEY = 'isyatirim';
 
 const ENDPOINT =
   'https://www.isyatirim.com.tr/tr-tr/analiz/_Layouts/15/IsYatirim.Website/StockInfo/CompanyInfoAjax.aspx/getScreenerDataNEW';
@@ -115,6 +125,7 @@ export async function runIsyatirimIngest(opts?: { trigger?: 'cron' | 'manual' })
   let errors = 0;
 
   // Log satırını önce "running" olarak aç; hata olsa bile finished_at + status yazacağız.
+  // Dual-write: eski isyatirim_runs (admin uyumluluk) + yeni broker_runs (multi-broker)
   const runId = Number(
     db
       .prepare(
@@ -122,12 +133,14 @@ export async function runIsyatirimIngest(opts?: { trigger?: 'cron' | 'manual' })
       )
       .run(now, trigger).lastInsertRowid,
   );
+  const brokerRun = startBrokerRun(ISYATIRIM_BROKER_KEY, trigger);
 
   const finalize = (status: 'ok' | 'error', totalCount: number, taggedCount: number, errMsg: string | null) => {
     const fin = Date.now();
     db.prepare(
       `UPDATE isyatirim_runs SET finished_at = ?, duration_ms = ?, total = ?, tagged = ?, errors = ?, error_message = ?, status = ? WHERE id = ?`,
     ).run(fin, fin - now, totalCount, taggedCount, errors, errMsg, status, runId);
+    brokerRun.finalize(status, totalCount, taggedCount, errMsg, errors);
   };
 
   let all: RawStock[];
@@ -174,25 +187,46 @@ export async function runIsyatirimIngest(opts?: { trigger?: 'cron' | 'manual' })
        updated_at = excluded.updated_at`,
   );
 
+  const brokerRows: BrokerRecommendation[] = [];
+
   const tx = db.transaction((rows: RawStock[]) => {
     for (const r of rows) {
       const { ticker, name } = splitHisse(String(r.Hisse ?? ''));
       if (!ticker || ticker.length > 10) continue;
+      const closePrice = parseNumber(r[F_CLOSE]);
+      const targetPrice = parseNumber(r[F_TARGET]);
+      const potentialPct = parseNumber(r[F_POTENTIAL]);
+      const peRatio = parseNumber(r[F_PE]);
+      const marketCap = parseNumber(r[F_MCAP]);
+      const recommendation = recMap.get(ticker) ?? null;
       upsert.run(
         ticker,
         name,
-        parseNumber(r[F_CLOSE]),
-        parseNumber(r[F_TARGET]),
-        parseNumber(r[F_POTENTIAL]),
-        parseNumber(r[F_PE]),
-        parseNumber(r[F_MCAP]),
-        recMap.get(ticker) ?? null,
+        closePrice,
+        targetPrice,
+        potentialPct,
+        peRatio,
+        marketCap,
+        recommendation,
         today,
         now,
       );
+      brokerRows.push({
+        ticker,
+        name,
+        closePrice,
+        targetPrice,
+        potentialPct,
+        peRatio,
+        marketCapMnTl: marketCap,
+        recommendation,
+      });
     }
   });
   tx(all);
+
+  // Yeni generic tabloya da yaz (multi-broker konsensüs için)
+  upsertBrokerRecommendations(ISYATIRIM_BROKER_KEY, today, brokerRows, { replaceAll: true });
 
   finalize(errors === 0 ? 'ok' : 'error', all.length, recMap.size, null);
 

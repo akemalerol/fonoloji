@@ -14,6 +14,7 @@ import { runKapDisclosuresIngest } from '../scripts/ingestKapDisclosures.js';
 import { runEstimates, verifyEstimates } from '../scripts/navEstimateDaily.js';
 import { runPortfolioIngest } from '../scripts/ingestPortfolio.js';
 import { runIsyatirimIngest } from '../scripts/ingestIsyatirimAnalysts.js';
+import { runYkyatirimIngest } from '../scripts/ingestYkyatirim.js';
 import { runAlertChecker, runFundChangeDetector, runPeriodSummary, runWatchlistDigest, runWeeklyDigest } from './alerts.js';
 import { purgeOldTracking } from '../services/tracking.js';
 
@@ -197,6 +198,8 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
   // İş Yatırım analist verisi — hafta içi 18:15 TR (Borsa kapanışı 18:00'den sonra).
   // Tek POST'ta tüm BIST kapsamı çekilir; 4 ek POST ile AL/SAT/TUT etiketlenir.
   // Fon detay sayfasında "analist konsensüsü" kartını besler.
+  // NOT: Günlük close_price ve potansiyel değişiyor; tavsiye değişimi daha seyrek
+  // ama close_price takip edildiği için her gün kapanış sonrası çalışıyor.
   cron.schedule('15 18 * * 1-5', async () => {
     log.info('[cron] İş Yatırım analist ingest başlıyor');
     try {
@@ -204,6 +207,20 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
       log.info(`[cron] İş Yatırım: ${r.total} hisse, ${r.tagged} öneri etiketli, ${r.errors} hata`);
     } catch (err) {
       log.error('[cron] İş Yatırım hata:', err);
+    }
+  }, { timezone: 'Europe/Istanbul' });
+
+  // Yapı Kredi Yatırım Model Portföy — Pzt/Çar/Cum 18:20 TR.
+  // Endpoint ~10-15 hisselik odaklı liste döndürüyor; tavsiye + hedef fiyat
+  // değişimleri haftada birkaç kez olabiliyor (yeni rapor çıktığında). closePrice
+  // günlük yenilense de portföy bileşimi/hedef haftalık cadence'te yeterli.
+  cron.schedule('20 18 * * 1,3,5', async () => {
+    log.info('[cron] YKY model portföy ingest başlıyor');
+    try {
+      const r = await runYkyatirimIngest({ trigger: 'cron' });
+      log.info(`[cron] YKY: ${r.total} hisse, ${r.tagged} yazıldı, ${r.errors} hata`);
+    } catch (err) {
+      log.error('[cron] YKY hata:', err);
     }
   }, { timezone: 'Europe/Istanbul' });
 

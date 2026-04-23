@@ -405,6 +405,7 @@ export const api = {
     fetchJson<{
       reportDate: string | null;
       stocksAsOfDate: string | null;
+      brokers: string[];
       totalWeight: number;
       coveredWeight: number;
       coverage: number;
@@ -419,6 +420,19 @@ export const api = {
         potentialPct: number | null;
         peRatio: number | null;
         recommendation: string | null;
+        primaryBroker: string | null;
+        brokers: Array<{
+          broker: string;
+          targetPrice: number | null;
+          potentialPct: number | null;
+          recommendation: string | null;
+          entryDate: string | null;
+          reportTitle: string | null;
+          reportUrl: string | null;
+          asOfDate: string;
+        }>;
+        brokerCount: number;
+        targetRange: { min: number | null; max: number | null; avg: number | null } | null;
       }>;
     }>(`/api/funds/${encodeURIComponent(code)}/analyst-consensus`),
 };

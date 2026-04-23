@@ -8,6 +8,18 @@ import { getSystemHealth } from '../services/systemHealth.js';
 import { AD_PLACEMENTS, listAds, updateAd } from '../services/ads.js';
 import { generateTweet, postTweet, queueTweet, type TweetContext } from '../services/x.js';
 import { runIsyatirimIngest } from '../scripts/ingestIsyatirimAnalysts.js';
+import { runYkyatirimIngest } from '../scripts/ingestYkyatirim.js';
+
+// Yeni broker ingest'leri buraya eklendikçe admin paneli otomatik butona kavuşur.
+const BROKER_RUNNERS: Record<string, (opts: { trigger: 'cron' | 'manual' }) => Promise<unknown>> = {
+  isyatirim: runIsyatirimIngest,
+  ykyatirim: runYkyatirimIngest,
+};
+
+const BROKER_LABELS: Record<string, string> = {
+  isyatirim: 'İş Yatırım',
+  ykyatirim: 'Yapı Kredi Yatırım',
+};
 
 const COOKIE_NAME = 'fonoloji_session';
 
@@ -1040,6 +1052,153 @@ export const adminRoute: FastifyPluginAsync = async (app) => {
     });
 
     return { ok: true, started: true };
+  });
+
+  // === Generic broker admin endpoint'leri — broker_recommendations + broker_runs ===
+  // Yeni broker eklendiğinde BROKER_RUNNERS + BROKER_LABELS'a satır eklemek yeterli.
+
+  app.get('/brokers', async () => {
+    const db = getDb();
+    const rows = db
+      .prepare(
+        `SELECT broker,
+                COUNT(*) as stock_count,
+                MAX(as_of_date) as as_of_date,
+                SUM(CASE WHEN target_price > 0 THEN 1 ELSE 0 END) as with_target,
+                SUM(CASE WHEN recommendation IS NOT NULL THEN 1 ELSE 0 END) as with_rec
+         FROM broker_recommendations
+         GROUP BY broker
+         ORDER BY broker`,
+      )
+      .all() as Array<{
+      broker: string;
+      stock_count: number;
+      as_of_date: string | null;
+      with_target: number;
+      with_rec: number;
+    }>;
+    const last = db
+      .prepare(
+        `SELECT broker, MAX(started_at) as last_run, status
+         FROM broker_runs
+         GROUP BY broker`,
+      )
+      .all() as Array<{ broker: string; last_run: number | null; status: string }>;
+    const lastByBroker = new Map(last.map((l) => [l.broker, l]));
+    // Bilinen tüm broker'ları da listele (henüz veri yoksa bile UI'da görünsün)
+    const known = new Set<string>([
+      ...rows.map((r) => r.broker),
+      ...Object.keys(BROKER_RUNNERS),
+    ]);
+    return {
+      items: Array.from(known)
+        .sort()
+        .map((b) => {
+          const r = rows.find((x) => x.broker === b);
+          const l = lastByBroker.get(b);
+          return {
+            broker: b,
+            label: BROKER_LABELS[b] ?? b,
+            stockCount: r?.stock_count ?? 0,
+            withTarget: r?.with_target ?? 0,
+            withRec: r?.with_rec ?? 0,
+            asOfDate: r?.as_of_date ?? null,
+            lastRun: l?.last_run ?? null,
+            lastStatus: l?.status ?? null,
+            hasRunner: b in BROKER_RUNNERS,
+          };
+        }),
+    };
+  });
+
+  app.get('/brokers/:broker/runs', async (req, reply) => {
+    const { broker } = req.params as { broker: string };
+    const { limit = '50' } = req.query as { limit?: string };
+    if (!(broker in BROKER_RUNNERS) && !BROKER_LABELS[broker]) {
+      return reply.code(404).send({ error: 'Bilinmeyen broker' });
+    }
+    const n = Math.min(Math.max(Number(limit) || 50, 1), 500);
+    const db = getDb();
+    const rows = db
+      .prepare(
+        `SELECT id, started_at, finished_at, duration_ms, total, tagged, errors,
+                trigger, error_message, status
+         FROM broker_runs
+         WHERE broker = ?
+         ORDER BY started_at DESC
+         LIMIT ?`,
+      )
+      .all(broker, n);
+    const stats = db
+      .prepare(
+        `SELECT COUNT(*) as total_runs,
+                SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END) as ok,
+                SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as failed,
+                MAX(started_at) as last_run
+         FROM broker_runs
+         WHERE broker = ?`,
+      )
+      .get(broker) as {
+      total_runs: number;
+      ok: number;
+      failed: number;
+      last_run: number | null;
+    };
+    const latest = db
+      .prepare(
+        `SELECT COUNT(*) as stocks, MAX(as_of_date) as as_of_date
+         FROM broker_recommendations
+         WHERE broker = ?`,
+      )
+      .get(broker) as { stocks: number; as_of_date: string | null };
+    return { broker, label: BROKER_LABELS[broker] ?? broker, items: rows, stats, latest };
+  });
+
+  app.get('/brokers/:broker/stocks', async (req, reply) => {
+    const { broker } = req.params as { broker: string };
+    const { q = '', limit = '200' } = req.query as { q?: string; limit?: string };
+    if (!(broker in BROKER_RUNNERS) && !BROKER_LABELS[broker]) {
+      return reply.code(404).send({ error: 'Bilinmeyen broker' });
+    }
+    const n = Math.min(Math.max(Number(limit) || 200, 1), 1000);
+    const db = getDb();
+    const qUpper = q.toUpperCase();
+    const where = q ? `AND (ticker LIKE ? OR name LIKE ?)` : '';
+    const params: unknown[] = q ? [broker, `%${qUpper}%`, `%${q}%`] : [broker];
+    const rows = db
+      .prepare(
+        `SELECT ticker, name, close_price, target_price, potential_pct, recommendation,
+                pe_ratio, market_cap_mn_tl, weight_pct, entry_date,
+                report_title, report_url, as_of_date, updated_at
+         FROM broker_recommendations
+         WHERE broker = ? ${where}
+         ORDER BY COALESCE(market_cap_mn_tl, 0) DESC, ticker ASC
+         LIMIT ?`,
+      )
+      .all(...params, n);
+    return { broker, items: rows };
+  });
+
+  app.post('/brokers/:broker/run', async (req, reply) => {
+    const { broker } = req.params as { broker: string };
+    const runner = BROKER_RUNNERS[broker];
+    if (!runner) return reply.code(404).send({ error: 'Runner yok bu broker için' });
+
+    const db = getDb();
+    const running = db
+      .prepare(
+        `SELECT id, started_at FROM broker_runs WHERE broker = ? AND status = 'running' LIMIT 1`,
+      )
+      .get(broker) as { id: number; started_at: number } | undefined;
+    if (running && Date.now() - running.started_at < 5 * 60_000) {
+      return reply.code(409).send({ error: 'Zaten çalışan bir sorgu var', runId: running.id });
+    }
+
+    runner({ trigger: 'manual' }).catch((err) => {
+      req.log.error({ err, broker }, '[admin] broker manuel ingest hata');
+    });
+
+    return { ok: true, started: true, broker };
   });
 
   // Giden mail'lerin kopyaları (admin panelde görünür).

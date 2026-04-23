@@ -492,10 +492,14 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
     };
   });
 
-  // Analist konsensüsü — fon portföyündeki hisseler için İş Yatırım verileri
-  // ağırlıklı ortalamaya dönüştürülür. Fon detay sayfasındaki "Analist Konsensüsü"
-  // kartını besler. "İş Yatırım raporuna göre hazırlanmıştır" disclaimer'ı zorunlu
-  // — isyatirim_stocks.as_of_date ile birlikte dönüyor ki UI "son güncelleme" yazabilsin.
+  // Analist konsensüsü — fon portföyündeki hisseler için birden fazla aracı kurumun
+  // (İş Yatırım, Yapı Kredi Yatırım, ...) hedef fiyat + AL/TUT/SAT görüşünü birleştirir.
+  // "Primary" broker olarak hedef fiyat yayınlayanlar arasında en yüksek piyasa değerli
+  // (market cap) olan seçilir — o satırda tek hedef fiyat gösterilir; alternatifler
+  // items[].brokers altında listelenir.
+  //
+  // Backward-compat: shape aynı kalıyor (ticker/targetPrice/potentialPct/recommendation),
+  // ek olarak: brokers[] array, brokersCovering sayı, brokerSources meta.
   app.get('/funds/:code/analyst-consensus', async (req, reply) => {
     const { code } = req.params as { code: string };
     const db = getDb();
@@ -507,44 +511,60 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
       )
       .get(code) as { d: string | null };
     if (!latest.d) {
-      return { reportDate: null, coverage: 0, items: [], weightedPotential: null };
+      return { reportDate: null, coverage: 0, items: [], weightedPotential: null, brokers: [] };
     }
 
-    const rows = db
+    // Portföydeki hisse + ağırlık
+    const holdings = db
       .prepare(
-        `SELECT h.asset_code as ticker,
-                h.asset_name,
-                h.weight,
-                s.name as stock_name,
-                s.close_price,
-                s.target_price,
-                s.potential_pct,
-                s.pe_ratio,
-                s.recommendation,
-                s.as_of_date
-         FROM fund_holdings h
-         LEFT JOIN isyatirim_stocks s ON s.ticker = h.asset_code
-         WHERE h.code = ? AND h.report_date = ?
-           AND h.asset_type = 'stock' AND h.asset_code IS NOT NULL
-         ORDER BY h.weight DESC`,
+        `SELECT asset_code as ticker, asset_name, weight
+         FROM fund_holdings
+         WHERE code = ? AND report_date = ?
+           AND asset_type = 'stock' AND asset_code IS NOT NULL
+         ORDER BY weight DESC`,
       )
-      .all(code, latest.d) as Array<{
+      .all(code, latest.d) as Array<{ ticker: string; asset_name: string; weight: number }>;
+
+    if (holdings.length === 0) {
+      return { reportDate: latest.d, coverage: 0, items: [], weightedPotential: null, brokers: [] };
+    }
+
+    // Portföydeki ticker'lar için tüm broker tavsiyelerini tek sorguda al
+    const tickers = holdings.map((h) => h.ticker);
+    const placeholders = tickers.map(() => '?').join(',');
+    const brokerRows = db
+      .prepare(
+        `SELECT broker, ticker, name, close_price, target_price, potential_pct,
+                recommendation, pe_ratio, market_cap_mn_tl, entry_date,
+                report_title, report_url, as_of_date
+         FROM broker_recommendations
+         WHERE ticker IN (${placeholders})`,
+      )
+      .all(...tickers) as Array<{
+      broker: string;
       ticker: string;
-      asset_name: string;
-      weight: number;
-      stock_name: string | null;
+      name: string | null;
       close_price: number | null;
       target_price: number | null;
       potential_pct: number | null;
-      pe_ratio: number | null;
       recommendation: string | null;
-      as_of_date: string | null;
+      pe_ratio: number | null;
+      market_cap_mn_tl: number | null;
+      entry_date: string | null;
+      report_title: string | null;
+      report_url: string | null;
+      as_of_date: string;
     }>;
 
-    if (rows.length === 0) {
-      return { reportDate: latest.d, coverage: 0, items: [], weightedPotential: null };
+    // ticker -> broker adı -> satır
+    const byTicker = new Map<string, typeof brokerRows>();
+    for (const r of brokerRows) {
+      const list = byTicker.get(r.ticker) ?? [];
+      list.push(r);
+      byTicker.set(r.ticker, list);
     }
 
+    // Konsensüs metrikleri (primary görüşe göre)
     let totalWeight = 0;
     let coveredWeight = 0;
     let weightedSum = 0;
@@ -556,25 +576,74 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
       unrated: 0,
     };
     let stocksAsOfDate: string | null = null;
+    const brokerSources = new Set<string>();
 
-    for (const r of rows) {
-      totalWeight += r.weight;
-      // İş Yatırım hedef fiyat yayınlamıyorsa target=0 döner → kapsama dışı say
-      const hasValidTarget =
-        r.target_price !== null && r.target_price > 0 && r.potential_pct !== null;
-      if (hasValidTarget) {
-        coveredWeight += r.weight;
-        weightedSum += r.weight * (r.potential_pct as number);
+    const items = holdings.map((h) => {
+      totalWeight += h.weight;
+      const brokerList = byTicker.get(h.ticker) ?? [];
+      // Hedefi olan (> 0) görüşler
+      const withTarget = brokerList.filter(
+        (b) => b.target_price !== null && b.target_price > 0 && b.potential_pct !== null,
+      );
+      // Primary: hedef fiyat yayınlayanlar arasında market_cap en yüksek olan,
+      // yoksa listedeki ilk hedef fiyat yayınlayan. Büyük kap = daha güvenilir proxy.
+      const primary = withTarget.length > 0
+        ? withTarget.reduce((best, cur) => {
+            const bm = best.market_cap_mn_tl ?? -Infinity;
+            const cm = cur.market_cap_mn_tl ?? -Infinity;
+            return cm > bm ? cur : best;
+          })
+        : (brokerList[0] ?? null);
+
+      if (primary && primary.target_price !== null && primary.target_price > 0) {
+        coveredWeight += h.weight;
+        weightedSum += h.weight * (primary.potential_pct as number);
       }
-      if (r.recommendation && r.recommendation in recCount) {
-        recCount[r.recommendation]!++;
-      } else if (r.close_price !== null) {
-        recCount.unrated!++;
+      const rec = primary?.recommendation ?? null;
+      if (rec && rec in recCount) recCount[rec]!++;
+      else if (primary?.close_price !== null && primary?.close_price !== undefined) recCount.unrated!++;
+
+      for (const b of brokerList) {
+        brokerSources.add(b.broker);
+        if (b.as_of_date && (!stocksAsOfDate || b.as_of_date > stocksAsOfDate)) {
+          stocksAsOfDate = b.as_of_date;
+        }
       }
-      if (r.as_of_date && (!stocksAsOfDate || r.as_of_date > stocksAsOfDate)) {
-        stocksAsOfDate = r.as_of_date;
-      }
-    }
+
+      // Hedef fiyatların min/max/avg
+      const targets = withTarget.map((b) => b.target_price as number);
+      const targetMin = targets.length > 0 ? Math.min(...targets) : null;
+      const targetMax = targets.length > 0 ? Math.max(...targets) : null;
+      const targetAvg =
+        targets.length > 0 ? targets.reduce((a, c) => a + c, 0) / targets.length : null;
+
+      const validPrimary = primary && primary.target_price !== null && primary.target_price > 0;
+      return {
+        ticker: h.ticker,
+        name: primary?.name ?? h.asset_name,
+        weight: h.weight,
+        closePrice: primary?.close_price ?? null,
+        // Primary broker view (geri uyumluluk için tekil alanlar)
+        targetPrice: validPrimary ? primary!.target_price : null,
+        potentialPct: validPrimary ? primary!.potential_pct : null,
+        peRatio: primary?.pe_ratio ?? null,
+        recommendation: rec,
+        primaryBroker: primary?.broker ?? null,
+        // Tüm broker görüşleri
+        brokers: brokerList.map((b) => ({
+          broker: b.broker,
+          targetPrice: b.target_price !== null && b.target_price > 0 ? b.target_price : null,
+          potentialPct: b.target_price !== null && b.target_price > 0 ? b.potential_pct : null,
+          recommendation: b.recommendation,
+          entryDate: b.entry_date,
+          reportTitle: b.report_title,
+          reportUrl: b.report_url,
+          asOfDate: b.as_of_date,
+        })),
+        brokerCount: brokerList.length,
+        targetRange: targets.length > 0 ? { min: targetMin, max: targetMax, avg: targetAvg } : null,
+      };
+    });
 
     const coverage = totalWeight > 0 ? coveredWeight / totalWeight : 0;
     const weightedPotential = coveredWeight > 0 ? weightedSum / coveredWeight : null;
@@ -582,25 +651,33 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
     return {
       reportDate: latest.d,
       stocksAsOfDate,
+      brokers: Array.from(brokerSources).sort(),
       totalWeight: Math.round(totalWeight * 100) / 100,
       coveredWeight: Math.round(coveredWeight * 100) / 100,
       coverage: Math.round(coverage * 10000) / 10000,
-      weightedPotential: weightedPotential !== null ? Math.round(weightedPotential * 100) / 100 : null,
+      weightedPotential:
+        weightedPotential !== null ? Math.round(weightedPotential * 100) / 100 : null,
       recCount,
-      items: rows.map((r) => {
-        const validTarget = r.target_price !== null && r.target_price > 0;
-        return {
-          ticker: r.ticker,
-          name: r.stock_name ?? r.asset_name,
-          weight: r.weight,
-          closePrice: r.close_price,
-          targetPrice: validTarget ? r.target_price : null,
-          potentialPct: validTarget ? r.potential_pct : null,
-          peRatio: r.pe_ratio,
-          recommendation: r.recommendation,
-        };
-      }),
+      items,
     };
+  });
+
+  // Tek hisse için tüm aracı kurumların görüşü — stock detay sayfası için.
+  app.get('/stocks/:ticker/recommendations', async (req) => {
+    const { ticker } = req.params as { ticker: string };
+    const db = getDb();
+    const t = ticker.trim().toUpperCase();
+    const rows = db
+      .prepare(
+        `SELECT broker, ticker, name, close_price, target_price, potential_pct,
+                recommendation, pe_ratio, market_cap_mn_tl, weight_pct, entry_date,
+                report_title, report_url, as_of_date, updated_at
+         FROM broker_recommendations
+         WHERE ticker = ?
+         ORDER BY broker ASC`,
+      )
+      .all(t) as Array<Record<string, unknown>>;
+    return { ticker: t, items: rows };
   });
 
   // Manager behavior score

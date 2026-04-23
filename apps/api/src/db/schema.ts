@@ -355,6 +355,49 @@ export const SCHEMA_STATEMENTS: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_isyatirim_runs_started ON isyatirim_runs(started_at DESC)`,
 
+  // Generic aracı kurum analist tavsiyeleri — İş Yatırım tek kaynağın genişletilmiş
+  // hali. broker kolonu: 'isyatirim' | 'ykyatirim' | (ileride) 'ziraatyatirim' vb.
+  // Fon portföylerindeki hisselerin multi-broker konsensüsünü hesaplamak için.
+  // İş Yatırım tüm BIST'i tararken YKY sadece kendi model portföyünü verir —
+  // bu yüzden "kapsam" broker başına değişir; consensus hesabında görünür.
+  `CREATE TABLE IF NOT EXISTS broker_recommendations (
+    broker TEXT NOT NULL,
+    ticker TEXT NOT NULL,
+    name TEXT,
+    close_price REAL,
+    target_price REAL,
+    potential_pct REAL,
+    recommendation TEXT,
+    pe_ratio REAL,
+    market_cap_mn_tl REAL,
+    weight_pct REAL,
+    entry_date TEXT,
+    report_title TEXT,
+    report_url TEXT,
+    as_of_date TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (broker, ticker)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_broker_recs_ticker ON broker_recommendations(ticker)`,
+  `CREATE INDEX IF NOT EXISTS idx_broker_recs_broker_date ON broker_recommendations(broker, as_of_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_broker_recs_recommendation ON broker_recommendations(recommendation)`,
+
+  // Ingest çalıştırma logu, broker boyutlu. isyatirim_runs'ın multi-broker muadili.
+  `CREATE TABLE IF NOT EXISTS broker_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    broker TEXT NOT NULL,
+    started_at INTEGER NOT NULL,
+    finished_at INTEGER,
+    duration_ms INTEGER,
+    total INTEGER,
+    tagged INTEGER,
+    errors INTEGER,
+    trigger TEXT,
+    error_message TEXT,
+    status TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_broker_runs_broker_started ON broker_runs(broker, started_at DESC)`,
+
   `CREATE TABLE IF NOT EXISTS nav_estimates (
     code TEXT NOT NULL,
     estimate_date TEXT NOT NULL,
