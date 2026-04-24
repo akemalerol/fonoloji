@@ -2,6 +2,7 @@ import { ArrowUpRight, Calendar, Percent, TrendingDown, TrendingUp } from 'lucid
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { CpiCharts } from './charts';
+import { GoldMarketCard } from './gold-market-card';
 
 export const metadata = { title: 'Ekonomi & TÜFE' };
 export const revalidate = 300;
@@ -220,6 +221,8 @@ export default async function EconomyPage() {
           </div>
         </div>
       )}
+
+      <GoldMarketCard />
     </div>
   );
 }

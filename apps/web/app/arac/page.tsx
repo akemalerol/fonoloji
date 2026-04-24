@@ -1,4 +1,4 @@
-import { ArrowRight, Calculator, Dna, History, Radar } from 'lucide-react';
+import { ArrowRight, Calculator, Coins, Dna, History, Radar } from 'lucide-react';
 import Link from 'next/link';
 
 export const metadata = {
@@ -41,6 +41,13 @@ const TOOLS = [
     title: 'Yatırım Hesaplayıcı',
     desc: 'Seçtiğin fonla geçmiş yatırımın bugünkü değerini hesapla. Tek seferlik yatırım + getiri analizi.',
     accent: 'emerald',
+  },
+  {
+    href: '/arac/altin-karsilastirma',
+    icon: Coins,
+    title: 'Altın Karşılaştırma',
+    desc: 'TL tutarını bugün fiziki altın (çeyrek, yarım, tam, bilezik) ile altın fonu arasında kıyasla. Spread maliyeti görünür.',
+    accent: 'amber',
   },
 ] as const;
 

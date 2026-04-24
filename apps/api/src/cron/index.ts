@@ -17,6 +17,7 @@ import { runIsyatirimIngest } from '../scripts/ingestIsyatirimAnalysts.js';
 import { runYkyatirimIngest } from '../scripts/ingestYkyatirim.js';
 import { runZiraatIngest } from '../scripts/ingestZiraat.js';
 import { runGarantiIngest } from '../scripts/ingestGaranti.js';
+import { runAltinkaynakIngest } from '../scripts/ingestAltinkaynak.js';
 import { runAlertChecker, runFundChangeDetector, runPeriodSummary, runWatchlistDigest, runWeeklyDigest } from './alerts.js';
 import { purgeOldTracking } from '../services/tracking.js';
 
@@ -250,6 +251,17 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
       log.info(`[cron] Ziraat: ${r.total} hisse, asOf=${r.asOfDate}`);
     } catch (err) {
       log.error('[cron] Ziraat hata:', err);
+    }
+  }, { timezone: 'Europe/Istanbul' });
+
+  // Altınkaynak altın/döviz piyasası — her 5 dakika, 7/24.
+  // Public CDN, auth yok. Fiziki altın ürünleri (çeyrek, yarım, cumhuriyet,
+  // 22/18/14 ayar, bilezik) + TR döviz alış/satış spread'li veri.
+  cron.schedule('*/5 * * * *', async () => {
+    try {
+      await runAltinkaynakIngest();
+    } catch (err) {
+      log.error('[cron] altınkaynak hata:', err);
     }
   }, { timezone: 'Europe/Istanbul' });
 

@@ -436,6 +436,64 @@ export const api = {
       }>;
     }>(`/api/funds/${encodeURIComponent(code)}/analyst-consensus`),
 
+  goldLive: () =>
+    fetchJson<{
+      items: Array<{
+        code: string;
+        name: string | null;
+        description: string | null;
+        buy: number | null;
+        sell: number | null;
+        value: number | null;
+        change_pct: number | null;
+        is_bulk: number;
+        data_group: number | null;
+        source_time: string | null;
+        fetched_at: number;
+      }>;
+      fetchedAt: number | null;
+    }>(`/api/gold/live`),
+
+  goldCompare: (amount: number, fundCode?: string) =>
+    fetchJson<{
+      amountTl: number;
+      physical: Array<{
+        code: string;
+        name: string | null;
+        description: string | null;
+        buy: number | null;
+        sell: number | null;
+        changePct: number | null;
+        unitsForAmount: number | null;
+        spreadPct: number | null;
+      }>;
+      fund: {
+        code: string;
+        name: string;
+        currentPrice: number | null;
+        unitsForAmount: number | null;
+        return30d: number | null;
+        gramGold30dReturn: number | null;
+        realGoldReturn: number | null;
+      } | null;
+    }>(
+      `/api/gold/compare?amount=${encodeURIComponent(String(amount))}${
+        fundCode ? `&fundCode=${encodeURIComponent(fundCode)}` : ''
+      }`,
+    ),
+
+  goldParity: (code: string) =>
+    fetchJson<{
+      fund: { code: string; name: string; price: number; priceDate: string | null };
+      gold: {
+        gramSellPrice: number;
+        gramBuyPrice: number | null;
+        changePct: number | null;
+        fetchedAt: number;
+      };
+      gramsPerUnit: number;
+    }>(`/api/funds/${encodeURIComponent(code)}/gold-parity`),
+
   brokerReports: () =>
     fetchJson<{
       items: Array<{

@@ -79,7 +79,7 @@ export default async function FundDetailPage({
   if (!detail) notFound();
 
   const period = searchParams.period ?? '1y';
-  const [history, monthly, drawdown, timeline, advanced, aiSummary, disclosures, percentile, analystConsensus] = await Promise.all([
+  const [history, monthly, drawdown, timeline, advanced, aiSummary, disclosures, percentile, analystConsensus, goldParity] = await Promise.all([
     api.getHistory(code, period),
     api.getMonthly(code).catch(() => ({ code, months: [] })),
     api.getDrawdown(code).catch(() => ({ code, points: [] })),
@@ -89,6 +89,7 @@ export default async function FundDetailPage({
     api.disclosures(code, 50).catch(() => ({ code, items: [] as Array<{ disclosure_index: number; subject: string | null; kap_title: string | null; rule_type: string | null; period: number | null; year: number | null; publish_date: number; attachment_count: number; summary: string | null }>, backfillTriggered: false })),
     api.percentile(code).catch(() => null),
     api.analystConsensus(code).catch(() => null),
+    api.goldParity(code).catch(() => null),
   ]);
   const points = history.points;
   const firstPrice = points[0]?.price ?? 0;
@@ -195,6 +196,13 @@ export default async function FundDetailPage({
               <ChangePill value={fund.return_1d ?? null} />
               <span className="text-muted-foreground">· {formatDate(fund.current_date)}</span>
             </div>
+            {goldParity && (
+              <div className="mt-1 inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-300 ring-1 ring-amber-500/20 md:ml-auto" title={`1 fon payı = ${goldParity.gramsPerUnit.toFixed(4)} gram altın (canlı Altınkaynak fiyatıyla)`}>
+                <span>≈</span>
+                <span className="font-mono tabular-nums">{goldParity.gramsPerUnit.toFixed(3)}</span>
+                <span>gr altın</span>
+              </div>
+            )}
             <div className="md:flex md:justify-end">
               <LiveEstimate code={fund.code} />
             </div>

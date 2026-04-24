@@ -731,6 +731,175 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
     return { items: rows, updated_at: rows.length > 0 ? (rows[0] as { fetched_at: number }).fetched_at : null };
   });
 
+  // Altınkaynak altın piyasası — fiziki ürün (çeyrek/yarım/tam/cumhuriyet/
+  // 22-18-14 ayar/bilezik) + gram altın + ons + gümüş, buy/sell spread'li.
+  // data_group: 2=Perakende, 7=Gümüş, 8=Cumhuriyet ailesi, 9=Ons/IAB, 11=Toptan
+  app.get('/gold/live', async () => {
+    const db = getDb();
+    const rows = db
+      .prepare(
+        `SELECT code, name, description, buy, sell, value, change_pct, is_bulk,
+                data_group, source_time, fetched_at
+         FROM gold_prices
+         ORDER BY data_group, code`,
+      )
+      .all() as Array<{
+      code: string;
+      name: string | null;
+      description: string | null;
+      buy: number | null;
+      sell: number | null;
+      value: number | null;
+      change_pct: number | null;
+      is_bulk: number;
+      data_group: number | null;
+      source_time: string | null;
+      fetched_at: number;
+    }>;
+    const fetchedAt = rows[0]?.fetched_at ?? null;
+    return { items: rows, fetchedAt };
+  });
+
+  // Altın karşılaştırma — verilen TL tutarın bugün hangi fiziki altın ürünü
+  // veya altın fonundan kaç adet/gram alacağını hesaplar + son 30 günlük
+  // gram altın vs altın fonu performansını kıyaslar.
+  app.get('/gold/compare', async (req) => {
+    const { amount = '10000', fundCode } = req.query as { amount?: string; fundCode?: string };
+    const tl = Math.max(0, Number(amount) || 0);
+    const db = getDb();
+
+    // Fiziki ürünler — "ne kadar alırsın" hesabı için satış fiyatı kullanılır
+    const physical = db
+      .prepare(
+        `SELECT code, name, description, sell, buy, change_pct
+         FROM gold_prices
+         WHERE code IN ('GA','C','Y','T','A','B','18','14','HH_T','CH_T','GAT','XAUUSD')
+         ORDER BY CASE code
+           WHEN 'GA' THEN 1
+           WHEN 'C' THEN 2
+           WHEN 'Y' THEN 3
+           WHEN 'T' THEN 4
+           WHEN 'A' THEN 5
+           WHEN 'B' THEN 6
+           WHEN '18' THEN 7
+           WHEN '14' THEN 8
+           WHEN 'HH_T' THEN 20
+           WHEN 'CH_T' THEN 21
+           WHEN 'GAT' THEN 22
+           WHEN 'XAUUSD' THEN 30
+           ELSE 99 END`,
+      )
+      .all() as Array<{
+      code: string;
+      name: string | null;
+      description: string | null;
+      sell: number | null;
+      buy: number | null;
+      change_pct: number | null;
+    }>;
+
+    const items = physical.map((p) => ({
+      code: p.code,
+      name: p.name,
+      description: p.description,
+      buy: p.buy,
+      sell: p.sell,
+      changePct: p.change_pct,
+      unitsForAmount: p.sell && p.sell > 0 ? tl / p.sell : null,
+      // Sell - Buy = bozdurma sırasında kaybedilen spread (%)
+      spreadPct: p.sell && p.buy && p.sell > 0 ? ((p.sell - p.buy) / p.sell) * 100 : null,
+    }));
+
+    // Opsiyonel: fon karşılaştırması
+    let fund: {
+      code: string;
+      name: string;
+      currentPrice: number | null;
+      unitsForAmount: number | null;
+      return30d: number | null;
+      gramGold30dReturn: number | null;
+      realGoldReturn: number | null;
+    } | null = null;
+
+    if (fundCode) {
+      const code = fundCode.toUpperCase();
+      const f = db
+        .prepare(
+          `SELECT f.code, f.name, m.current_price, m.return_1m
+           FROM funds f LEFT JOIN metrics m ON m.code = f.code
+           WHERE f.code = ?`,
+        )
+        .get(code) as { code: string; name: string; current_price: number | null; return_1m: number | null } | undefined;
+
+      if (f) {
+        // Gram altının 30 gün getirisi — gold_daily'den hesapla, yoksa null
+        const gold30d = db
+          .prepare(
+            `WITH recent AS (
+               SELECT mid FROM gold_daily WHERE code='GA' ORDER BY date DESC LIMIT 1
+             ), old AS (
+               SELECT mid FROM gold_daily WHERE code='GA' AND date <= date('now','-30 days')
+               ORDER BY date DESC LIMIT 1
+             )
+             SELECT (SELECT mid FROM recent) AS now_price, (SELECT mid FROM old) AS old_price`,
+          )
+          .get() as { now_price: number | null; old_price: number | null };
+        const gold30dReturn =
+          gold30d.now_price && gold30d.old_price && gold30d.old_price > 0
+            ? ((gold30d.now_price - gold30d.old_price) / gold30d.old_price) * 100
+            : null;
+
+        const fundRet = f.return_1m !== null ? f.return_1m * 100 : null;
+        const realGoldReturn =
+          fundRet !== null && gold30dReturn !== null ? fundRet - gold30dReturn : null;
+
+        fund = {
+          code: f.code,
+          name: f.name,
+          currentPrice: f.current_price,
+          unitsForAmount: f.current_price && f.current_price > 0 ? tl / f.current_price : null,
+          return30d: fundRet,
+          gramGold30dReturn: gold30dReturn,
+          realGoldReturn,
+        };
+      }
+    }
+
+    return { amountTl: tl, physical: items, fund };
+  });
+
+  // Fon detayında "bu paran kaç gram altın eder" badge'i için hızlı endpoint.
+  // GA (gram altın) sell fiyatını + fonun son fiyatını döndürür.
+  app.get('/funds/:code/gold-parity', async (req, reply) => {
+    const { code } = req.params as { code: string };
+    const db = getDb();
+    const fund = db
+      .prepare(
+        `SELECT f.code, f.name, m.current_price, m.current_date
+         FROM funds f LEFT JOIN metrics m ON m.code = f.code
+         WHERE f.code = ?`,
+      )
+      .get(code) as { code: string; name: string; current_price: number | null; current_date: string | null } | undefined;
+    if (!fund || fund.current_price === null) return reply.code(404).send({ error: 'Fon bulunamadı' });
+
+    const gold = db
+      .prepare(
+        `SELECT sell, buy, change_pct, fetched_at
+         FROM gold_prices WHERE code = 'GA'`,
+      )
+      .get() as { sell: number | null; buy: number | null; change_pct: number | null; fetched_at: number } | undefined;
+    if (!gold?.sell) return reply.code(503).send({ error: 'Altın fiyatı henüz yok' });
+
+    // 1 fon payı = kaç gram altın?
+    const gramsPerUnit = fund.current_price / gold.sell;
+
+    return {
+      fund: { code: fund.code, name: fund.name, price: fund.current_price, priceDate: fund.current_date },
+      gold: { gramSellPrice: gold.sell, gramBuyPrice: gold.buy, changePct: gold.change_pct, fetchedAt: gold.fetched_at },
+      gramsPerUnit,
+    };
+  });
+
   // Market digest — AI commentary for day/week
   app.get('/market/digest', async (req) => {
     const { period = 'day' } = req.query as { period?: 'day' | 'week' };

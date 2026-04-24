@@ -398,6 +398,50 @@ export const SCHEMA_STATEMENTS: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_broker_runs_broker_started ON broker_runs(broker, started_at DESC)`,
 
+  // Altınkaynak anlık altın/döviz piyasası — 5 dakikalık snapshot.
+  // live_market (yahoo) spot fiyatları; gold_prices ise TR döviz bürosu tarzı
+  // alış/satış spread'li ve çeyrek/yarım/bilezik/22 ayar gibi FIZIKI ürünleri de içerir.
+  // code: USD, EUR, HH_T, CH_T, GA, C, Y, T, B, GAT, XAUUSD vs. Altınkaynak kodlaması.
+  `CREATE TABLE IF NOT EXISTS gold_prices (
+    code TEXT PRIMARY KEY,
+    name TEXT,
+    description TEXT,
+    buy REAL,
+    sell REAL,
+    value REAL,
+    change_pct REAL,
+    is_bulk INTEGER DEFAULT 0,
+    data_group INTEGER,
+    source_time TEXT,
+    fetched_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_gold_prices_dg ON gold_prices(data_group)`,
+
+  // Time-series history — her cron run'ında append. "paran kaç gram altın"
+  // trendi ve altın fonu vs fiziki altın karşılaştırması için.
+  // 5 dk granularity 180 günlük → ~8K row/code → ~200K toplam (24 code). Küçük.
+  `CREATE TABLE IF NOT EXISTS gold_prices_history (
+    code TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL,
+    buy REAL,
+    sell REAL,
+    change_pct REAL,
+    PRIMARY KEY (code, fetched_at)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_gold_history_code_time ON gold_prices_history(code, fetched_at DESC)`,
+
+  // Günlük kapanış snapshot'ı — istatistik ve tarihsel kıyas için. İş günü sonunda
+  // (18:00 TR sonrası ilk cron) o günün son değerini yazar, idempotent.
+  `CREATE TABLE IF NOT EXISTS gold_daily (
+    date TEXT NOT NULL,
+    code TEXT NOT NULL,
+    buy REAL,
+    sell REAL,
+    mid REAL,
+    PRIMARY KEY (date, code)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_gold_daily_code_date ON gold_daily(code, date DESC)`,
+
   `CREATE TABLE IF NOT EXISTS nav_estimates (
     code TEXT NOT NULL,
     estimate_date TEXT NOT NULL,
