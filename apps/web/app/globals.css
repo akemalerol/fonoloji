@@ -336,3 +336,32 @@ html.light .dot-live::after {
   background: #059669 !important;
 }
 
+/* ============================================================================
+ * Theme switch cross-fade — Toggle sırasında 350ms smooth transition.
+ * ThemeToggle componenti html'e `.theme-transition` class'ı ekliyor,
+ * 380ms sonra kaldırıyor. Geçiş süresince tüm renk değişimleri yumuşak.
+ * Normal sayfa render'ında transition yok — scroll/hover performansı bozulmasın.
+ * ============================================================================ */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition:
+    background-color 300ms ease,
+    color 300ms ease,
+    border-color 300ms ease,
+    fill 300ms ease,
+    stroke 300ms ease,
+    box-shadow 300ms ease !important;
+  transition-delay: 0s !important;
+}
+/* Özel animasyonları bozmamak için motion-reduce kullanıcılarını exclude et */
+@media (prefers-reduced-motion: reduce) {
+  html.theme-transition,
+  html.theme-transition *,
+  html.theme-transition *::before,
+  html.theme-transition *::after {
+    transition: none !important;
+  }
+}
+
