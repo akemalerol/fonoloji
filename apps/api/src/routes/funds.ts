@@ -10,6 +10,76 @@ import { getActiveAd, incrementImpression } from '../services/ads.js';
 const holdingsBackfillTried = new Map<string, number>();
 const HOLDINGS_BACKFILL_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
 
+// Fon kodu olmayan ama kullanıcıların sık sorduğu endeks/kur sembolleri için
+// live_market'tan dönen mini-fallback. 404 yerine "fund-benzeri" yanıt döner.
+// Aliases → live_market.symbol mapping.
+const INDEX_ALIAS: Record<string, string> = {
+  BIST: 'BIST100',
+  BIST100: 'BIST100',
+  XU100: 'BIST100',
+  USDTRY: 'USDTRY',
+  EURTRY: 'EURTRY',
+  GBPTRY: 'GBPTRY',
+  ALTIN: 'GOLDTRY_GR',
+  GUMUS: 'SILVERTRY_GR',
+};
+
+function indexFallback(db: ReturnType<typeof getDb>, rawCode: string): unknown | null {
+  const key = rawCode?.trim().toUpperCase();
+  const symbol = INDEX_ALIAS[key];
+  if (!symbol) return null;
+  const row = db
+    .prepare(
+      `SELECT symbol, name, value, change_pct, previous, source, fetched_at
+       FROM live_market WHERE symbol = ?`,
+    )
+    .get(symbol) as
+    | {
+        symbol: string;
+        name: string;
+        value: number;
+        change_pct: number | null;
+        previous: number | null;
+        source: string | null;
+        fetched_at: number;
+      }
+    | undefined;
+  if (!row) return null;
+
+  const fetchedAtIso = new Date(row.fetched_at).toISOString();
+  // "fund" shape'ine yakın minimum alan seti — UI tarafı kırılmasın.
+  return {
+    fund: {
+      code: key,
+      name: row.name,
+      type: 'INDEX', // gerçek fon değil — endeks/kur
+      category: 'Endeks',
+      management_company: null,
+      isin: null,
+      risk_score: null,
+      kap_url: null,
+      trading_status: null,
+      first_seen: null,
+      last_seen: fetchedAtIso.slice(0, 10),
+      updated_at: row.fetched_at,
+      // metrics-uyumlu alanlar
+      current_price: row.value,
+      current_date: fetchedAtIso.slice(0, 10),
+      return_1d: row.change_pct,
+    },
+    portfolio: null,
+    live: {
+      symbol: row.symbol,
+      value: row.value,
+      previous: row.previous,
+      changePct: row.change_pct,
+      source: row.source,
+      fetchedAt: fetchedAtIso,
+    },
+    isIndex: true,
+  };
+}
+
 function maybeTriggerHoldingsBackfill(db: ReturnType<typeof getDb>, code: string, log: { warn: (...args: unknown[]) => void }): void {
   const last = holdingsBackfillTried.get(code);
   if (last && Date.now() - last < HOLDINGS_BACKFILL_COOLDOWN_MS) return;
@@ -118,7 +188,14 @@ export const fundsRoute: FastifyPluginAsync = async (app) => {
          WHERE f.code = ?`,
       )
       .get(code);
-    if (!fund) return reply.code(404).send({ error: 'Fon bulunamadı' });
+
+    if (!fund) {
+      // Endeks sorgusu (BIST, BIST100, XU100) — fon değil ama kullanıcılar sık
+      // soruyor. 404 yerine live_market'tan canlı BIST 100 değerini döndür.
+      const idx = indexFallback(db, code);
+      if (idx) return idx;
+      return reply.code(404).send({ error: 'Fon bulunamadı' });
+    }
 
     const portfolio = db
       .prepare(`SELECT * FROM portfolio_snapshots WHERE code = ? ORDER BY date DESC LIMIT 1`)
