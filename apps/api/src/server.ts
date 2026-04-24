@@ -138,9 +138,21 @@ app.addHook('onResponse', async (req, reply) => {
   try {
     const db = getDb();
     const path = url.split('?')[0] ?? url;
-    // API-key ise req.apiKey plugin'den gelir; user ise JWT'den çözülür
+    // API-key ise req.apiKey plugin'den gelir; user ise cookie JWT'den çözülür.
+    // Fastify-jwt'nin verify'si async + preHandler gerektirir → hook'ta çalışmaz.
+    // jwt.decode() sync ve fail-silent; imza doğrulaması yapmasa bile logging için
+    // kimlik atfı yeterli (gerçek auth'u endpoint'in kendisi zaten yapıyor).
     const apiKeyId = (req as unknown as { apiKey?: { id: number } }).apiKey?.id ?? null;
-    const userId = (req as unknown as { user?: { sub: number } }).user?.sub ?? null;
+    let userId: number | null = null;
+    try {
+      const token = (req as unknown as { cookies?: Record<string, string> }).cookies?.['fonoloji_session'];
+      if (token) {
+        const payload = req.server.jwt.decode(token) as { uid?: number } | null;
+        if (payload && typeof payload.uid === 'number') userId = payload.uid;
+      }
+    } catch {
+      /* geçersiz token — user null kalır */
+    }
     const cfCountry = (req.headers['cf-ipcountry'] as string) ?? null;
     const origin = (req.headers['origin'] as string) ?? null;
     const refererRaw = (req.headers['referer'] as string) ?? null;

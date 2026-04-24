@@ -14,9 +14,11 @@ const NAV = [
   { href: '/fonlar', label: 'Fonlar' },
   { href: '/kategoriler', label: 'Kategoriler' },
   { href: '/kesifler', label: 'Keşifler' },
+  { href: '/kesifler/analist-raporlari', label: 'Analist' },
   { href: '/arac', label: 'Araçlar' },
   { href: '/ekonomi', label: 'Ekonomi' },
   { href: '/karsilastir', label: 'Karşılaştır' },
+  { href: '/sozluk', label: 'Sözlük' },
   { href: '/api-docs', label: 'API' },
 ];
 

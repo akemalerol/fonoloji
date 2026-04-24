@@ -26,6 +26,7 @@ const SECTIONS = [
     title: 'Keşfet',
     items: [
       { href: '/kesifler', label: 'Keşifler' },
+      { href: '/kesifler/analist-raporlari', label: 'Analist Raporları' },
       { href: '/kesifler/risk-getiri', label: 'Risk-Getiri' },
       { href: '/kesifler/korelasyon', label: 'Korelasyon' },
       { href: '/kesifler/isi-haritasi-varlik', label: 'Varlık ısı haritası' },
@@ -41,6 +42,7 @@ const SECTIONS = [
       { href: '/arac/fon-dna', label: 'Fon DNA' },
       { href: '/arac/dca-hesabi', label: 'DCA hesabı' },
       { href: '/arac/geri-test', label: 'Geri-test' },
+      { href: '/arac/altin-karsilastirma', label: 'Altın Karşılaştırma' },
       { href: '/hesapla', label: 'Yatırım Hesaplayıcı' },
     ],
   },

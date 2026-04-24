@@ -286,3 +286,202 @@
     75%, 100% { transform: scale(2.2); opacity: 0; }
   }
 }
+
+/* ============================================================================
+ * LIGHT MODE — Kapsamlı okunabilirlik düzeltmeleri
+ * ----------------------------------------------------------------------------
+ * Site dark-first tasarlandı; çoğu status rengi (emerald-300, rose-300, sky-300)
+ * koyu zeminde çalışmak için açık ton seçilmiş. Light mode'da bunlar açık
+ * kağıtta kaybolup okunmuyor. Bu blok tüm yaygın kullanılan açık ton
+ * sınıflarını light mode'da koyu (600-800) tona çevirir.
+ * ============================================================================ */
+
+html.light {
+  /* Status text — açık (300) → koyu (700) */
+  --tw-emerald-text: #047857;
+  --tw-rose-text: #be123c;
+  --tw-amber-text: #b45309;
+  --tw-sky-text: #0369a1;
+  --tw-brand-text: #b45309;
+}
+
+/* Emerald — getiri pozitif */
+html.light .text-emerald-200,
+html.light .text-emerald-300,
+html.light .text-emerald-400 {
+  color: #047857 !important; /* emerald-700 */
+}
+html.light .bg-emerald-500\/10,
+html.light .bg-emerald-500\/15,
+html.light .bg-emerald-500\/20 {
+  background-color: rgba(16, 185, 129, 0.12) !important;
+}
+html.light .ring-emerald-500\/20,
+html.light .ring-emerald-500\/30,
+html.light .ring-emerald-500\/40 {
+  --tw-ring-color: rgba(5, 150, 105, 0.5) !important;
+}
+
+/* Rose — getiri negatif */
+html.light .text-rose-200,
+html.light .text-rose-300,
+html.light .text-rose-400 {
+  color: #be123c !important; /* rose-700 */
+}
+html.light .bg-rose-500\/10,
+html.light .bg-rose-500\/15,
+html.light .bg-rose-500\/20 {
+  background-color: rgba(244, 63, 94, 0.12) !important;
+}
+html.light .ring-rose-500\/20,
+html.light .ring-rose-500\/30,
+html.light .ring-rose-500\/40 {
+  --tw-ring-color: rgba(190, 18, 60, 0.5) !important;
+}
+
+/* Amber — uyarı, nötr, vurgu */
+html.light .text-amber-200,
+html.light .text-amber-300,
+html.light .text-amber-400 {
+  color: #b45309 !important; /* amber-700 */
+}
+html.light .text-amber-100 {
+  color: #92400e !important;
+}
+html.light .bg-amber-500\/5,
+html.light .bg-amber-500\/10,
+html.light .bg-amber-500\/15 {
+  background-color: rgba(245, 158, 11, 0.14) !important;
+}
+html.light .ring-amber-500\/20,
+html.light .ring-amber-500\/30,
+html.light .ring-amber-500\/40 {
+  --tw-ring-color: rgba(180, 83, 9, 0.45) !important;
+}
+html.light .border-amber-500\/30,
+html.light .border-amber-500\/40 {
+  border-color: rgba(180, 83, 9, 0.4) !important;
+}
+
+/* Sky — bilgi, link */
+html.light .text-sky-200,
+html.light .text-sky-300 {
+  color: #0369a1 !important; /* sky-700 */
+}
+html.light .bg-sky-500\/10,
+html.light .bg-sky-500\/15 {
+  background-color: rgba(14, 165, 233, 0.12) !important;
+}
+html.light .ring-sky-500\/20,
+html.light .ring-sky-500\/30 {
+  --tw-ring-color: rgba(3, 105, 161, 0.5) !important;
+}
+
+/* Brand (amber family) — tıklanabilirlik, CTA */
+html.light .text-brand-200,
+html.light .text-brand-300,
+html.light .text-brand-400 {
+  color: #b45309 !important; /* brand-700 equivalent */
+}
+html.light a.text-brand-400:hover,
+html.light a.text-brand-300:hover,
+html.light button.text-brand-400:hover {
+  color: #92400e !important;
+}
+
+/* Verdigris */
+html.light .text-verdigris-300,
+html.light .text-verdigris-400 {
+  color: #0f766e !important; /* teal-700 */
+}
+
+/* Muted tones — çok saydam bg'ler light'ta yok oluyor, biraz kaldır */
+html.light .bg-muted\/10 {
+  background-color: rgba(30, 20, 10, 0.04) !important;
+}
+html.light .bg-muted\/20 {
+  background-color: rgba(30, 20, 10, 0.06) !important;
+}
+html.light .bg-muted\/30 {
+  background-color: rgba(30, 20, 10, 0.09) !important;
+}
+html.light .bg-muted\/50 {
+  background-color: rgba(30, 20, 10, 0.14) !important;
+}
+
+/* Card opacity — light'ta solid kart yap, cam efekti çirkin görünüyor */
+html.light .bg-card\/30,
+html.light .bg-card\/40,
+html.light .bg-card\/60 {
+  background-color: hsl(var(--card)) !important;
+}
+html.light .bg-card\/80 {
+  background-color: hsl(var(--card)) !important;
+}
+html.light .bg-background\/30,
+html.light .bg-background\/40,
+html.light .bg-background\/50 {
+  background-color: hsl(var(--background)) !important;
+}
+
+/* Border opacity — açık zeminde /40 görünmüyor */
+html.light .border-border\/30,
+html.light .border-border\/40 {
+  border-color: hsl(var(--border) / 0.6) !important;
+}
+html.light .border-border\/50,
+html.light .border-border\/60 {
+  border-color: hsl(var(--border) / 0.85) !important;
+}
+
+/* Gradient overlay'ler — light'ta daha belirgin yap */
+html.light .from-brand-500\/5,
+html.light .from-brand-500\/10 {
+  --tw-gradient-from: rgba(245, 158, 11, 0.10) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgba(245, 158, 11, 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+html.light .from-amber-500\/5,
+html.light .from-amber-500\/10,
+html.light .from-amber-500\/15 {
+  --tw-gradient-from: rgba(245, 158, 11, 0.12) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgba(245, 158, 11, 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+
+/* Header & mobil tab — light'ta arka plan solid */
+html.light nav.bg-background\/95 {
+  background-color: hsl(var(--background)) !important;
+}
+html.light header {
+  background-color: hsl(var(--background) / 0.95) !important;
+  border-bottom-color: hsl(var(--border) / 0.7) !important;
+}
+
+/* Dot-live ping animation — light'ta biraz daha soyut */
+html.light .dot-live::before,
+html.light .dot-live::after {
+  background: #059669 !important; /* emerald-600 */
+}
+
+/* Pill gain/loss — light mode'da okunabilir ton */
+html.light .pill-gain {
+  @apply border-emerald-700/30 bg-emerald-500/15 text-emerald-700;
+}
+html.light .pill-loss {
+  @apply border-rose-700/30 bg-rose-500/15 text-rose-700;
+}
+
+/* Foreground text kırılganlıkları — bazı componentler text-foreground/90 vb.
+   kullanıyor, açık zeminde fazla silik kalıyor */
+html.light .text-foreground\/60,
+html.light .text-foreground\/70,
+html.light .text-foreground\/80 {
+  color: hsl(var(--foreground)) !important;
+}
+html.light .text-muted-foreground\/70,
+html.light .text-muted-foreground\/80,
+html.light .text-muted-foreground\/90 {
+  color: hsl(var(--muted-foreground)) !important;
+}
+
