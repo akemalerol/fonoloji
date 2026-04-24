@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { api } from '@/lib/api';
 import { ExchangeBadge, StockLogo } from '@/components/fx/stock-logo';
+import { LivePrice } from './live-price';
 import { cn, formatCompact, formatPrice } from '@/lib/utils';
 
 export const revalidate = 600;
@@ -73,7 +74,10 @@ const BROKER_LABEL: Record<string, string> = {
 
 export default async function StockPage({ params }: { params: { ticker: string } }) {
   const ticker = normalizeTicker(params.ticker);
-  const data = await getData(ticker);
+  const [data, livePrice] = await Promise.all([
+    getData(ticker),
+    api.stockPrice(ticker).catch(() => null),
+  ]);
   if (!data) notFound();
 
   const { consensus, brokers, holders, ownershipTrend, summary } = data;
@@ -110,25 +114,24 @@ export default async function StockPage({ params }: { params: { ticker: string }
                 </span>
                 <span className="block text-xl text-muted-foreground md:text-2xl">{data.name}</span>
               </h1>
+              <LivePrice ticker={data.ticker} initial={livePrice ?? undefined} />
             </div>
           </div>
-          {consensus.closePrice && (
+          {/* Analist tavsiyesi — fiyat LivePrice'tan geliyor, burada sadece rozet */}
+          {consensus.recommendation && (
             <div className="text-right">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Kapanış</div>
-              <div className="font-mono text-3xl tabular-nums md:text-4xl">
-                {formatPrice(consensus.closePrice, 2)}
-                <span className="ml-1 text-sm text-muted-foreground">TL</span>
-              </div>
-              {consensus.recommendation && (
-                <div className="mt-1 flex items-center justify-end gap-2 text-xs">
-                  <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold', recStyle(consensus.recommendation).cls)}>
-                    {recStyle(consensus.recommendation).label}
-                  </span>
-                  {data.primaryBroker && (
-                    <span className="text-muted-foreground">
-                      · {BROKER_LABEL[data.primaryBroker] ?? data.primaryBroker}
-                    </span>
-                  )}
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Analist</div>
+              <span className={cn('mt-1 inline-block rounded-full px-2.5 py-1 text-xs font-semibold', recStyle(consensus.recommendation).cls)}>
+                {recStyle(consensus.recommendation).label}
+              </span>
+              {data.primaryBroker && (
+                <div className="mt-1 text-[10px] text-muted-foreground">
+                  {BROKER_LABEL[data.primaryBroker] ?? data.primaryBroker}
+                </div>
+              )}
+              {consensus.targetRange && (
+                <div className="mt-1 text-[10px] text-muted-foreground">
+                  Hedef ort: <span className="font-mono">{formatPrice(consensus.targetRange.avg, 2)}</span>
                 </div>
               )}
             </div>

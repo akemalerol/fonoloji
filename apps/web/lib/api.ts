@@ -436,6 +436,23 @@ export const api = {
       }>;
     }>(`/api/funds/${encodeURIComponent(code)}/analyst-consensus`),
 
+  stockPrice: (ticker: string) =>
+    fetchJson<{
+      ticker: string;
+      yahooSymbol: string;
+      price: number | null;
+      previous: number | null;
+      changePct: number | null;
+      dayHigh: number | null;
+      dayLow: number | null;
+      volume: number | null;
+      currency: string | null;
+      marketState: string | null;
+      isDelayed: boolean;
+      delayMinutes: number;
+      fetchedAt: number;
+    }>(`/api/stocks/${encodeURIComponent(ticker)}/price`),
+
   stockDetail: (ticker: string) =>
     fetchJson<{
       ticker: string;
@@ -560,4 +577,88 @@ export const api = {
         asOfDate: string | null;
       }>;
     }>(`/api/broker-reports`),
+};
+
+
+// --- Admin: Mini-inbox (Mailcow IMAP, cookie auth) ---
+
+export interface InboxSummary {
+  uid: number;
+  fromName: string;
+  fromEmail: string;
+  to: string;
+  subject: string;
+  snippet: string;
+  date: string;
+  unread: boolean;
+  hasAttachments: boolean;
+  folder: string;
+  isSpam: boolean;
+}
+export interface InboxFolderStats { total: number; unread: number }
+export interface InboxAddress { name: string; email: string }
+export interface InboxMessage {
+  uid: number;
+  messageId: string | null;
+  from: InboxAddress[];
+  to: InboxAddress[];
+  cc: InboxAddress[];
+  subject: string;
+  date: string;
+  html: string | null;
+  text: string | null;
+  attachments: { filename: string; size: number; contentType: string }[];
+  inReplyTo: string | null;
+  references: string[];
+}
+
+async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = text;
+    try { msg = JSON.parse(text).error ?? text; } catch { /* ignore */ }
+    throw new Error(msg || `HTTP ${res.status}`);
+  }
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
+}
+
+export const inboxApi = {
+  list: (opts?: { folder?: string; limit?: number; offset?: number }) => {
+    const q = new URLSearchParams();
+    if (opts?.folder) q.set('folder', opts.folder);
+    if (opts?.limit) q.set('limit', String(opts.limit));
+    if (opts?.offset) q.set('offset', String(opts.offset));
+    const qs = q.toString();
+    return adminFetch<{ messages: InboxSummary[]; stats: InboxFolderStats }>(
+      `/admin-api/inbox${qs ? `?${qs}` : ''}`,
+    );
+  },
+  get: (uid: number, folder?: string) => {
+    const qs = folder && folder !== 'INBOX' ? `?folder=${encodeURIComponent(folder)}` : '';
+    return adminFetch<InboxMessage>(`/admin-api/inbox/${uid}${qs}`);
+  },
+  setRead: (uid: number, read: boolean, folder?: string) =>
+    adminFetch<{ ok: true }>(`/admin-api/inbox/${uid}/read`, {
+      method: 'POST',
+      body: JSON.stringify({ read, folder }),
+    }),
+  delete: (uid: number, folder?: string) => {
+    const qs = folder && folder !== 'INBOX' ? `?folder=${encodeURIComponent(folder)}` : '';
+    return adminFetch<{ ok: true }>(`/admin-api/inbox/${uid}${qs}`, { method: 'DELETE' });
+  },
+  reply: (args: {
+    to: string; cc?: string; subject: string; bodyText: string; bodyHtml?: string;
+    inReplyTo?: string | null; references?: string[];
+  }) =>
+    adminFetch<{ ok: true }>(`/admin-api/inbox/reply`, {
+      method: 'POST',
+      body: JSON.stringify(args),
+    }),
 };

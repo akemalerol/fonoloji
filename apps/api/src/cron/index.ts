@@ -19,6 +19,7 @@ import { runZiraatIngest } from '../scripts/ingestZiraat.js';
 import { runGarantiIngest } from '../scripts/ingestGaranti.js';
 import { runAltinkaynakIngest } from '../scripts/ingestAltinkaynak.js';
 import { runStockLogosIngest } from '../scripts/ingestStockLogos.js';
+import { runStockPricesIngest, schedulePriceTicker } from '../scripts/ingestStockPrices.js';
 import { runAlertChecker, runFundChangeDetector, runPeriodSummary, runWatchlistDigest, runWeeklyDigest } from './alerts.js';
 import { purgeOldTracking } from '../services/tracking.js';
 
@@ -254,6 +255,11 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
       log.error('[cron] Ziraat hata:', err);
     }
   }, { timezone: 'Europe/Istanbul' });
+
+  // Hisse fiyat canlı polling — 30 sn tick, kendi içinde market hours logic.
+  // Kapalı piyasa sembolleri atlanıyor, son değer DB'de kalıyor.
+  // Yahoo rate limit güvenli (batch 100 × 10 batch ≈ 2 req/sn, 60/dk içinde).
+  schedulePriceTicker(log);
 
   // BIST hisse logoları — haftada 1 Pazar 05:00 TR.
   // Incremental mode: sadece henüz indirilmemiş/failed olanlar. TV yeni eklediyse

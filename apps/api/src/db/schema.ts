@@ -430,6 +430,27 @@ export const SCHEMA_STATEMENTS: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_gold_history_code_time ON gold_prices_history(code, fetched_at DESC)`,
 
+  // BIST + yabancı hisse canlı fiyatları — Yahoo Finance quote API'sinden.
+  // ticker = asset_code (BIST: ASELS, yabancı Bloomberg: "AMZN US", "AAL LN")
+  // yahoo_symbol = Yahoo formatı (ASELS.IS, AMZN, IAG.L)
+  // market_state: 'REGULAR' (açık), 'CLOSED' (kapalı), 'PRE'/'POST' (AH seans)
+  // currency = TRY/USD/EUR/GBP vb.
+  `CREATE TABLE IF NOT EXISTS stock_prices (
+    ticker TEXT PRIMARY KEY,
+    yahoo_symbol TEXT NOT NULL,
+    price REAL,
+    previous REAL,
+    change_pct REAL,
+    day_high REAL,
+    day_low REAL,
+    volume INTEGER,
+    currency TEXT,
+    market_state TEXT,
+    last_error TEXT,
+    fetched_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_stock_prices_fetched ON stock_prices(fetched_at DESC)`,
+
   // BIST hisse logoları — TradingView symbol-search API'sinden ticker → logoid
   // eşlemesi bulunuyor, SVG /public/stock-logos/{ticker}.svg olarak host ediliyor.
   // status: 'ok' logo indirildi; 'not_found' TV kapsamında yok; 'failed' ağ hatası.
