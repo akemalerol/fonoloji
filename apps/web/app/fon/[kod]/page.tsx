@@ -4,6 +4,7 @@ import { ShareButton } from '@/components/site/share-button';
 import { RecordRecentFund } from '@/components/site/recently-viewed';
 import { CompanyLogo } from '@/components/site/company-logo';
 import { AnalystConsensusCard } from './analyst-consensus-card';
+import { LiveIndexPrice } from './live-index';
 import { FundSection, SectionNav } from './fund-section';
 import { KapDisclosuresCard } from './kap-disclosures-card';
 import { PercentileBadges } from './percentile-badges';
@@ -191,11 +192,21 @@ export default async function FundDetailPage({
             </div>
           </div>
           <div className="col-span-2 md:col-span-1 md:text-right">
-            <div className="font-mono text-3xl tabular-nums md:text-4xl">{formatPrice(fund.current_price ?? 0, 6)}</div>
-            <div className="mt-1 flex items-center gap-2 text-xs md:justify-end">
-              <ChangePill value={fund.return_1d ?? null} />
-              <span className="text-muted-foreground">· {formatDate(fund.current_date)}</span>
-            </div>
+            {fund.type === 'INDEX' ? (
+              <LiveIndexPrice
+                code={fund.code}
+                initialPrice={fund.current_price ?? 0}
+                initialChange={fund.return_1d ?? null}
+              />
+            ) : (
+              <>
+                <div className="font-mono text-3xl tabular-nums md:text-4xl">{formatPrice(fund.current_price ?? 0, 6)}</div>
+                <div className="mt-1 flex items-center gap-2 text-xs md:justify-end">
+                  <ChangePill value={fund.return_1d ?? null} />
+                  <span className="text-muted-foreground">· {formatDate(fund.current_date)}</span>
+                </div>
+              </>
+            )}
             {goldParity && (
               <div className="mt-1 inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-300 ring-1 ring-amber-500/20 md:ml-auto" title={`1 fon payı = ${goldParity.gramsPerUnit.toFixed(4)} gram altın (canlı Altınkaynak fiyatıyla)`}>
                 <span>≈</span>
