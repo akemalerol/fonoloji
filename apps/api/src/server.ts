@@ -8,6 +8,7 @@ import { registerCron } from './cron/index.js';
 import { getDb } from './db/index.js';
 import { requireApiKey } from './auth/middleware.js';
 import { PLANS } from './auth/plans.js';
+import { findUserById } from './auth/users.js';
 import { adminRoute } from './routes/admin.js';
 import { authRoute } from './routes/auth.js';
 import { contactRoute } from './routes/contact.js';
@@ -235,13 +236,32 @@ await app.register(
       // Next.js SSR aynı VPS'ten 127.0.0.1 üzerinden çağırıyor — tüm siteden
       // gelen SSR tek bir bucket'ı paylaşırsa bir SSR sayfası (/en-iyi-fonlar/[yil]
       // gibi limit=500'lük sorgular) diğerlerini 429'a itiyor. Loopback'i muaf tut.
+      // Admin oturumu (fonoloji_session cookie + role=admin) de muaf — test sırasında
+      // sürekli F5 için sınır yok.
       allowList: (req) => {
         const cf = req.headers['cf-connecting-ip'] as string | undefined;
         // Gerçek kullanıcı her zaman cf-connecting-ip taşır (Cloudflare önde).
         // CF header yoksa ve req.ip loopback ise → internal SSR çağrısı.
-        if (cf) return false;
-        const ip = req.ip ?? '';
-        return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+        if (!cf) {
+          const ip = req.ip ?? '';
+          if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') return true;
+        }
+        // Admin cookie kontrolü — JWT verify sync değil, ama allowList sync olmak zorunda.
+        // Cookie varlığı + decode'yı fastify-jwt'nin sync decode API'si ile yap.
+        const token = (req as unknown as { cookies?: Record<string, string> }).cookies?.[
+          'fonoloji_session'
+        ];
+        if (!token) return false;
+        try {
+          const payload = req.server.jwt.decode(token) as { uid?: number; role?: string } | null;
+          if (payload && typeof payload.uid === 'number') {
+            const user = findUserById(getDb(), payload.uid);
+            if (user && user.role === 'admin' && !user.disabled_at) return true;
+          }
+        } catch {
+          /* geçersiz token — normal kullanıcı gibi davran */
+        }
+        return false;
       },
       keyGenerator: (req) =>
         (req.headers['cf-connecting-ip'] as string) ||
