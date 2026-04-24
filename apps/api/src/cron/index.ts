@@ -73,22 +73,23 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
     }
   };
 
-  // TEFAS ingest — weekdays only (Pzt-Cum). Weekend'de yeni fiyat yayınlanmıyor.
-  // Sabah saatleri: önceki iş gününün gecikmeli verilerini yakalar.
-  // Akşam saatleri: aynı günün verileri ~18:30 sonrası TEFAS'a çıkar.
+  // TEFAS ingest — hafta içi (Pzt-Cum), TR saati ile **07:00–12:30** penceresinde.
+  // TEFAS gece yeni fiyat yayınlamıyor; veri sabah 07'den öğle 12'ye kadar çıkıyor.
+  // Her 30 dakikada bir dener → 12 deneme; herhangi biri 0 satır dönmediyse işi
+  // bitirir (cron kendi içinde idempotent: aynı date/code için INSERT OR REPLACE).
   const schedule: Array<{ expr: string; label: string }> = [
-    { expr: '0 7 * * 1-5',  label: '07:00' },
-    { expr: '0 8 * * 1-5',  label: '08:00' },
-    { expr: '30 8 * * 1-5', label: '08:30' },
-    { expr: '0 9 * * 1-5',  label: '09:00' },
-    { expr: '30 9 * * 1-5', label: '09:30' },
-    { expr: '0 10 * * 1-5', label: '10:00' },
-    { expr: '0 11 * * 1-5', label: '11:00' },
-    { expr: '0 12 * * 1-5', label: '12:00' },
-    { expr: '45 18 * * 1-5', label: '18:45' },
-    { expr: '30 19 * * 1-5', label: '19:30' },
-    { expr: '30 20 * * 1-5', label: '20:30' },
-    { expr: '30 22 * * 1-5', label: '22:30' },
+    { expr: '0 7 * * 1-5',   label: '07:00' },
+    { expr: '30 7 * * 1-5',  label: '07:30' },
+    { expr: '0 8 * * 1-5',   label: '08:00' },
+    { expr: '30 8 * * 1-5',  label: '08:30' },
+    { expr: '0 9 * * 1-5',   label: '09:00' },
+    { expr: '30 9 * * 1-5',  label: '09:30' },
+    { expr: '0 10 * * 1-5',  label: '10:00' },
+    { expr: '30 10 * * 1-5', label: '10:30' },
+    { expr: '0 11 * * 1-5',  label: '11:00' },
+    { expr: '30 11 * * 1-5', label: '11:30' },
+    { expr: '0 12 * * 1-5',  label: '12:00' },
+    { expr: '30 12 * * 1-5', label: '12:30' },
   ];
 
   for (const { expr, label } of schedule) {
@@ -105,7 +106,10 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
     }
   }, { timezone: 'Europe/Istanbul' });
 
-  // Günlük sağlık kontrolü — 23:45 (Pzt-Cum). Bugünün verisi DB'de yoksa alert.
+  // Günlük sağlık kontrolü — 23:45 (Pzt-Cum). Bugünün verisi DB'de yoksa
+  // otomatik kurtarma denemesi: bir kez daha ingest çalıştır. Çoğu zaman
+  // gün içinde VPN kopması yüzünden eksik kalır; bu geç deneme 23:45'te
+  // VPN self-heal sonrası yakalar.
   cron.schedule('45 23 * * 1-5', async () => {
     try {
       const db = getDb();
@@ -114,7 +118,17 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
         .prepare(`SELECT COUNT(*) as c FROM prices WHERE date = ?`)
         .get(today) as { c: number };
       if (row.c === 0) {
-        log.error(`[cron] SAĞLIK UYARISI: ${today} için hiç fiyat yok! VPN ve TEFAS erişimini kontrol et.`);
+        log.error(`[cron] SAĞLIK UYARISI: ${today} için hiç fiyat yok — otomatik kurtarma deneniyor`);
+        await run('23:45 kurtarma');
+        // Tekrar kontrol et
+        const row2 = db
+          .prepare(`SELECT COUNT(*) as c FROM prices WHERE date = ?`)
+          .get(today) as { c: number };
+        if (row2.c === 0) {
+          log.error(`[cron] KURTARMA BAŞARISIZ: ${today} hâlâ 0 fiyat. VPN + TEFAS erişimini elle kontrol et.`);
+        } else {
+          log.info(`[cron] kurtarma OK: ${today} → ${row2.c} fiyat`);
+        }
       } else {
         log.info(`[cron] sağlık: ${today} → ${row.c} fiyat OK`);
       }

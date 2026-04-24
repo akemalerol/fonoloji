@@ -72,12 +72,58 @@ export async function runDailyIngest(args?: { start?: string; end?: string }): P
   }
 }
 
-// Direct CLI entry point
+// Direct CLI entry point — cron'daki tam zinciri çalıştırır:
+// ingest → recompute metrics/summary/category → revalidate Next.js ISR.
+// Manuel kurtarma senaryoları için kritik; aksi hâlde metrics tablosu
+// eski fiyatlarda kalır ve frontend "24 Nisan / 22 Apr fiyatı" gibi
+// tutarsızlık gösterir (gerçek yaşanan 2026-04-24 incident'ı).
 if (import.meta.url === `file://${process.argv[1]}`) {
-  runDailyIngest()
-    .then(() => process.exit(0))
-    .catch((err) => {
+  (async () => {
+    try {
+      await runDailyIngest();
+
+      const { getDb } = await import('../db/index.js');
+      const { recomputeAllMetrics, recomputeDailySummary, recomputeCategoryStats } = await import(
+        '../analytics/recompute.js'
+      );
+      const db = getDb();
+      console.log('[ingest] Metrikler yeniden hesaplanıyor...');
+      const t0 = Date.now();
+      recomputeAllMetrics(db);
+      recomputeDailySummary(db);
+      recomputeCategoryStats(db);
+      console.log(`[ingest] Analytics tamam (${Date.now() - t0}ms)`);
+
+      // Next.js ISR cache'ini bust et — revalidate webhook env var varsa
+      const secret = process.env.FONOLOJI_REVALIDATE_SECRET;
+      if (secret) {
+        const webUrl = process.env.FONOLOJI_WEB_URL ?? 'http://127.0.0.1:3000';
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 10_000);
+          const res = await fetch(`${webUrl}/hooks/revalidate`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${secret}`,
+            },
+            body: JSON.stringify({
+              paths: ['/', '/fon/[kod]', '/fonlar', '/en-iyi-fonlar/[slug]'],
+              layout: true,
+            }),
+            signal: controller.signal,
+          });
+          clearTimeout(timer);
+          console.log(`[ingest] Revalidate ${res.ok ? 'OK' : `HTTP ${res.status}`}`);
+        } catch (err) {
+          console.warn('[ingest] Revalidate hook atlandı:', err instanceof Error ? err.message : err);
+        }
+      }
+
+      process.exit(0);
+    } catch (err) {
       console.error('[ingest] Failed:', err);
       process.exit(1);
-    });
+    }
+  })();
 }
