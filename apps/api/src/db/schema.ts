@@ -430,6 +430,20 @@ export const SCHEMA_STATEMENTS: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_gold_history_code_time ON gold_prices_history(code, fetched_at DESC)`,
 
+  // BIST hisse logoları — TradingView symbol-search API'sinden ticker → logoid
+  // eşlemesi bulunuyor, SVG /public/stock-logos/{ticker}.svg olarak host ediliyor.
+  // status: 'ok' logo indirildi; 'not_found' TV kapsamında yok; 'failed' ağ hatası.
+  `CREATE TABLE IF NOT EXISTS stock_logos (
+    ticker TEXT PRIMARY KEY,
+    logoid TEXT,
+    file_size INTEGER,
+    status TEXT NOT NULL,
+    last_error TEXT,
+    found_at INTEGER,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_stock_logos_status ON stock_logos(status)`,
+
   // Günlük kapanış snapshot'ı — istatistik ve tarihsel kıyas için. İş günü sonunda
   // (18:00 TR sonrası ilk cron) o günün son değerini yazar, idempotent.
   `CREATE TABLE IF NOT EXISTS gold_daily (

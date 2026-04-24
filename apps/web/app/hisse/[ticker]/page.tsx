@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { api } from '@/lib/api';
+import { StockLogo } from '@/components/fx/stock-logo';
 import { cn, formatCompact, formatPrice } from '@/lib/utils';
 
 export const revalidate = 600;
@@ -85,14 +86,17 @@ export default async function StockPage({ params }: { params: { ticker: string }
       {/* Hero */}
       <div className="mb-8 rounded-2xl border border-border/60 bg-gradient-to-br from-brand-500/5 to-card/40 p-6 md:p-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="mb-1 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-              Hisse · {fmtReportDate(data.reportDate)} portföy raporu
+          <div className="flex items-start gap-4">
+            <StockLogo ticker={data.ticker} size={64} className="mt-1 shadow-sm" />
+            <div>
+              <div className="mb-1 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                Hisse · {fmtReportDate(data.reportDate)} portföy raporu
+              </div>
+              <h1 className="display text-balance text-4xl leading-[1.02] md:text-6xl">
+                <span className="font-mono text-brand-400">{data.ticker}</span>
+                <span className="block text-xl text-muted-foreground md:text-2xl">{data.name}</span>
+              </h1>
             </div>
-            <h1 className="display text-balance text-4xl leading-[1.02] md:text-6xl">
-              <span className="font-mono text-brand-400">{data.ticker}</span>
-              <span className="block text-xl text-muted-foreground md:text-2xl">{data.name}</span>
-            </h1>
           </div>
           {consensus.closePrice && (
             <div className="text-right">

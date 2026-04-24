@@ -797,6 +797,23 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
     };
   });
 
+  // Stock logo manifest — tüm ticker'lar için logo URL'i / fallback durumu.
+  // UI compact logo resolver'ı için tek request'te çözmek amacıyla toplu döner.
+  // Frontend bunu cache'ler, her ticker için ayrı HEAD çağrısı yapmaz.
+  app.get('/stock-logos', async () => {
+    const db = getDb();
+    const rows = db
+      .prepare(
+        `SELECT ticker, status, file_size FROM stock_logos WHERE status = 'ok'`,
+      )
+      .all() as Array<{ ticker: string; status: string; file_size: number }>;
+    const items: Record<string, string> = {};
+    for (const r of rows) {
+      items[r.ticker] = `/stock-logos/${r.ticker}.svg`;
+    }
+    return { items, total: rows.length };
+  });
+
   // Tek hisse için tüm aracı kurumların görüşü — stock detay sayfası için.
   app.get('/stocks/:ticker/recommendations', async (req) => {
     const { ticker } = req.params as { ticker: string };

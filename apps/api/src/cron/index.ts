@@ -18,6 +18,7 @@ import { runYkyatirimIngest } from '../scripts/ingestYkyatirim.js';
 import { runZiraatIngest } from '../scripts/ingestZiraat.js';
 import { runGarantiIngest } from '../scripts/ingestGaranti.js';
 import { runAltinkaynakIngest } from '../scripts/ingestAltinkaynak.js';
+import { runStockLogosIngest } from '../scripts/ingestStockLogos.js';
 import { runAlertChecker, runFundChangeDetector, runPeriodSummary, runWatchlistDigest, runWeeklyDigest } from './alerts.js';
 import { purgeOldTracking } from '../services/tracking.js';
 
@@ -251,6 +252,19 @@ export function registerCron(log: { info: (msg: string) => void; error: (...args
       log.info(`[cron] Ziraat: ${r.total} hisse, asOf=${r.asOfDate}`);
     } catch (err) {
       log.error('[cron] Ziraat hata:', err);
+    }
+  }, { timezone: 'Europe/Istanbul' });
+
+  // BIST hisse logoları — haftada 1 Pazar 05:00 TR.
+  // Incremental mode: sadece henüz indirilmemiş/failed olanlar. TV yeni eklediyse
+  // yakalar. Full refresh için manuel: `node ingestStockLogos.js --all`
+  cron.schedule('0 5 * * 0', async () => {
+    log.info('[cron] stock logos ingest başlıyor');
+    try {
+      const r = await runStockLogosIngest({ all: false });
+      log.info(`[cron] stock-logos: ok=${r.ok} nf=${r.notFound} fail=${r.failed}`);
+    } catch (err) {
+      log.error('[cron] stock-logos hata:', err);
     }
   }, { timezone: 'Europe/Istanbul' });
 

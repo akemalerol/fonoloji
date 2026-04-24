@@ -2,6 +2,7 @@
 
 import { ChevronDown, ChevronUp, TrendingUp, Users } from 'lucide-react';
 import * as React from 'react';
+import { StockLogo } from '@/components/fx/stock-logo';
 import { cn, formatPrice } from '@/lib/utils';
 
 // "Analist Konsensüsü" kartı — fon portföyündeki hisseler için birden fazla aracı
@@ -310,16 +311,19 @@ export function AnalystConsensusCard(props: Props) {
                       <td className="px-3 py-2">
                         <a
                           href={`/hisse/${it.ticker}`}
-                          className="font-mono text-xs font-semibold text-foreground hover:text-brand-300 hover:underline"
+                          className="flex items-center gap-2 hover:underline"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          {it.ticker}
-                        </a>
-                        {it.name && (
-                          <div className="truncate text-[10px] text-muted-foreground" title={it.name}>
-                            {it.name}
+                          <StockLogo ticker={it.ticker} size={22} />
+                          <div className="min-w-0">
+                            <div className="font-mono text-xs font-semibold text-foreground">{it.ticker}</div>
+                            {it.name && (
+                              <div className="truncate text-[10px] text-muted-foreground" title={it.name}>
+                                {it.name}
+                              </div>
+                            )}
                           </div>
-                        )}
+                        </a>
                       </td>
                       <td className="px-3 py-2 text-right font-mono text-xs tabular-nums">
                         %{it.weight.toFixed(2)}

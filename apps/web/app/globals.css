@@ -337,31 +337,32 @@ html.light .dot-live::after {
 }
 
 /* ============================================================================
- * Theme switch cross-fade — Toggle sırasında 350ms smooth transition.
- * ThemeToggle componenti html'e `.theme-transition` class'ı ekliyor,
- * 380ms sonra kaldırıyor. Geçiş süresince tüm renk değişimleri yumuşak.
- * Normal sayfa render'ında transition yok — scroll/hover performansı bozulmasın.
+ * Theme switch — View Transitions API (GPU-accelerated cross-fade).
+ *
+ * Modern tarayıcılar (Chrome 111+, Edge, Safari 18+, Firefox 129+ flag):
+ * JS `document.startViewTransition(toggle)` ile compositor-level cross-fade.
+ * CSS hiçbir layout/paint thrash yapmaz — tek GPU texture blend.
+ *
+ * Fallback (eski tarayıcılar): JS VTA yoksa sade toggle yapar, transition yok.
+ * "Kasma" hissi: eski sürümde her * element'e transition uygulanıyordu ki
+ * sayfa başına 5K+ node × 6 property = compositor overload. Silindi.
  * ============================================================================ */
-html.theme-transition,
-html.theme-transition *,
-html.theme-transition *::before,
-html.theme-transition *::after {
-  transition:
-    background-color 300ms ease,
-    color 300ms ease,
-    border-color 300ms ease,
-    fill 300ms ease,
-    stroke 300ms ease,
-    box-shadow 300ms ease !important;
-  transition-delay: 0s !important;
+@view-transition {
+  navigation: none; /* sayfa navigasyonunda auto tetiklenmesin */
 }
-/* Özel animasyonları bozmamak için motion-reduce kullanıcılarını exclude et */
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 280ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  mix-blend-mode: normal;
+}
+
+/* prefers-reduced-motion: VTA animasyonunu tamamen kapat */
 @media (prefers-reduced-motion: reduce) {
-  html.theme-transition,
-  html.theme-transition *,
-  html.theme-transition *::before,
-  html.theme-transition *::after {
-    transition: none !important;
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
   }
 }
 
