@@ -26,8 +26,19 @@ async function getData(ticker: string) {
   }
 }
 
+/** Next.js 14 dynamic segment URL-decode etmiyor ("/hisse/AMZN%20US" →
+ *  params.ticker = "AMZN%20US"). encodeURIComponent double-encode'a yol açıyor
+ *  → API'ye yanlış path. decodeURIComponent'le önce normalize edelim. */
+function normalizeTicker(raw: string): string {
+  try {
+    return decodeURIComponent(raw).toUpperCase();
+  } catch {
+    return raw.toUpperCase();
+  }
+}
+
 export async function generateMetadata({ params }: { params: { ticker: string } }): Promise<Metadata> {
-  const d = await getData(params.ticker.toUpperCase());
+  const d = await getData(normalizeTicker(params.ticker));
   if (!d) return { title: 'Hisse bulunamadı — Fonoloji' };
   const rec = d.consensus.recommendation ?? 'Takip';
   return {
@@ -61,7 +72,7 @@ const BROKER_LABEL: Record<string, string> = {
 };
 
 export default async function StockPage({ params }: { params: { ticker: string } }) {
-  const ticker = params.ticker.toUpperCase();
+  const ticker = normalizeTicker(params.ticker);
   const data = await getData(ticker);
   if (!data) notFound();
 
