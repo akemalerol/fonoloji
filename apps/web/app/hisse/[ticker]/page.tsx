@@ -5,6 +5,7 @@ import type { Metadata } from 'next';
 import { api } from '@/lib/api';
 import { ExchangeBadge, StockLogo } from '@/components/fx/stock-logo';
 import { LivePrice } from './live-price';
+import { StockPriceChart } from './price-chart';
 import { cn, formatCompact, formatPrice } from '@/lib/utils';
 
 export const revalidate = 600;
@@ -202,6 +203,9 @@ export default async function StockPage({ params }: { params: { ticker: string }
           </div>
         )}
       </div>
+
+      {/* Fiyat grafiği */}
+      <StockPriceChart ticker={data.ticker} />
 
       {/* Analist konsensüsü (4 broker) */}
       {brokers.length > 0 && (

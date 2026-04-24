@@ -5,6 +5,7 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 interface PriceData {
+  name?: string | null;
   price: number | null;
   previous: number | null;
   changePct: number | null;

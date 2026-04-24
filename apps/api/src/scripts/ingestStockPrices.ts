@@ -73,6 +73,8 @@ interface ChartMeta {
   symbol?: string;
   exchangeName?: string;
   instrumentType?: string;
+  longName?: string;
+  shortName?: string;
   regularMarketPrice?: number;
   regularMarketTime?: number;           // unix seconds — son price zaman damgası
   chartPreviousClose?: number;
@@ -110,6 +112,7 @@ interface ChartResponse {
 export interface StockPrice {
   ticker: string;
   yahooSymbol: string;
+  name: string | null;                   // longName (Yahoo'dan)
   price: number | null;
   previous: number | null;
   changePct: number | null;
@@ -131,6 +134,8 @@ interface YfChartMeta {
   symbol?: string;
   exchangeName?: string;
   instrumentType?: string;
+  longName?: string;                    // "Apple Inc." — resmi şirket adı
+  shortName?: string;                   // "Apple Inc." kısa versiyon
   regularMarketPrice?: number;
   regularMarketTime?: Date | number;
   chartPreviousClose?: number;
@@ -151,12 +156,14 @@ function toUnixSeconds(v: Date | number | undefined): number | undefined {
   return Math.floor(v.getTime() / 1000);
 }
 
-function convertMeta(yf: YfChartMeta): ChartMeta {
+function convertMeta(yf: YfChartMeta): ChartMeta & { longName?: string; shortName?: string } {
   return {
     currency: yf.currency,
     symbol: yf.symbol,
     exchangeName: yf.exchangeName,
     instrumentType: yf.instrumentType,
+    longName: yf.longName,
+    shortName: yf.shortName,
     regularMarketPrice: yf.regularMarketPrice,
     regularMarketTime: toUnixSeconds(yf.regularMarketTime),
     chartPreviousClose: yf.chartPreviousClose,
@@ -227,13 +234,15 @@ function upsertPrice(
   const changePct = price !== null && prev !== null && prev > 0
     ? ((price - prev) / prev) * 100
     : null;
+  const name = meta?.longName ?? meta?.shortName ?? null;
   db.prepare(
     `INSERT INTO stock_prices
-       (ticker, yahoo_symbol, price, previous, change_pct, day_high, day_low,
+       (ticker, yahoo_symbol, name, price, previous, change_pct, day_high, day_low,
         volume, currency, market_state, last_error, fetched_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(ticker) DO UPDATE SET
        yahoo_symbol = excluded.yahoo_symbol,
+       name = COALESCE(excluded.name, stock_prices.name),
        price = excluded.price,
        previous = excluded.previous,
        change_pct = excluded.change_pct,
@@ -247,6 +256,7 @@ function upsertPrice(
   ).run(
     ticker,
     yahoo,
+    name,
     price,
     prev,
     changePct,
@@ -298,6 +308,7 @@ export async function getStockPrice(ticker: string): Promise<StockPrice | null> 
     ? {
         ticker: t,
         yahooSymbol: yahoo,
+        name: meta.longName ?? meta.shortName ?? null,
         price,
         previous: prev,
         changePct,
@@ -323,13 +334,14 @@ export function getCachedStockPrice(ticker: string): StockPrice | null {
   if (cached?.data) return cached.data;
   const row = getDb()
     .prepare(
-      `SELECT yahoo_symbol, price, previous, change_pct, day_high, day_low,
+      `SELECT yahoo_symbol, name, price, previous, change_pct, day_high, day_low,
               volume, currency, market_state, fetched_at
        FROM stock_prices WHERE ticker = ?`,
     )
     .get(t) as
     | {
         yahoo_symbol: string;
+        name: string | null;
         price: number | null;
         previous: number | null;
         change_pct: number | null;
@@ -346,6 +358,7 @@ export function getCachedStockPrice(ticker: string): StockPrice | null {
   return {
     ticker: t,
     yahooSymbol: row.yahoo_symbol,
+    name: row.name,
     price: row.price,
     previous: row.previous,
     changePct: row.change_pct,
@@ -364,6 +377,95 @@ export function getCachedStockPrice(ticker: string): StockPrice | null {
 export async function runStockPricesIngest(): Promise<{ total: number; ok: number; noQuote: number; durationMs: number }> {
   // On-demand mimari — bulk fetch yok. Return boş.
   return { total: 0, ok: 0, noQuote: 0, durationMs: 0 };
+}
+
+// --- Historical chart data ---
+
+export interface ChartPoint {
+  date: number; // unix ms
+  price: number;
+}
+
+export interface StockChart {
+  ticker: string;
+  yahooSymbol: string;
+  period: string;
+  interval: string;
+  currency: string | null;
+  points: ChartPoint[];
+}
+
+type PeriodKey = '1d' | '5d' | '1m' | '3m' | '6m' | '1y' | '5y' | 'max';
+
+const PERIOD_CONFIG: Record<
+  PeriodKey,
+  { daysBack: number; interval: '5m' | '15m' | '30m' | '1h' | '1d' | '1wk' }
+> = {
+  '1d': { daysBack: 2, interval: '5m' },
+  '5d': { daysBack: 6, interval: '30m' },
+  '1m': { daysBack: 31, interval: '1h' },
+  '3m': { daysBack: 93, interval: '1d' },
+  '6m': { daysBack: 186, interval: '1d' },
+  '1y': { daysBack: 366, interval: '1d' },
+  '5y': { daysBack: 1827, interval: '1wk' },
+  max: { daysBack: 36_500, interval: '1wk' }, // 100y
+};
+
+// Chart cache: ticker+period → data
+const chartCache = new Map<string, { fetchedAt: number; data: StockChart | null }>();
+const CHART_TTL_MS = 60_000; // 1 dk (intraday), eski veriler zaten değişmez
+
+export async function getStockChart(
+  ticker: string,
+  period: PeriodKey = '1y',
+): Promise<StockChart | null> {
+  const t = ticker.trim().toUpperCase();
+  const yahoo = toYahooSymbol(t);
+  if (!yahoo) return null;
+
+  const cacheKey = `${t}:${period}`;
+  const cached = chartCache.get(cacheKey);
+  if (cached && Date.now() - cached.fetchedAt < CHART_TTL_MS) return cached.data;
+
+  const cfg = PERIOD_CONFIG[period];
+  const now = new Date();
+  const period1 = new Date(now.getTime() - cfg.daysBack * 86_400_000);
+
+  try {
+    const res = await yahooFinance.chart(yahoo, {
+      period1,
+      period2: now,
+      interval: cfg.interval,
+    });
+    const r = res as unknown as {
+      meta?: YfChartMeta;
+      quotes?: Array<{ date: Date | string | number; close?: number | null }>;
+    };
+    const quotes = r.quotes ?? [];
+    const points: ChartPoint[] = [];
+    for (const q of quotes) {
+      if (q.close === null || q.close === undefined) continue;
+      let ts: number;
+      if (q.date instanceof Date) ts = q.date.getTime();
+      else if (typeof q.date === 'number') ts = q.date * 1000;
+      else ts = Date.parse(q.date);
+      if (!Number.isFinite(ts) || !Number.isFinite(q.close)) continue;
+      points.push({ date: ts, price: q.close });
+    }
+    const data: StockChart = {
+      ticker: t,
+      yahooSymbol: yahoo,
+      period,
+      interval: cfg.interval,
+      currency: r.meta?.currency ?? null,
+      points,
+    };
+    chartCache.set(cacheKey, { fetchedAt: Date.now(), data });
+    return data;
+  } catch {
+    chartCache.set(cacheKey, { fetchedAt: Date.now(), data: null });
+    return null;
+  }
 }
 
 export function schedulePriceTicker(_log: { info: (m: string) => void; error: (...a: unknown[]) => void }): void {

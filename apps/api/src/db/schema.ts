@@ -438,6 +438,7 @@ export const SCHEMA_STATEMENTS: string[] = [
   `CREATE TABLE IF NOT EXISTS stock_prices (
     ticker TEXT PRIMARY KEY,
     yahoo_symbol TEXT NOT NULL,
+    name TEXT,
     price REAL,
     previous REAL,
     change_pct REAL,
@@ -609,6 +610,8 @@ export const SCHEMA_STATEMENTS: string[] = [
 ];
 
 const ADDITIONAL_COLUMNS: Array<{ table: string; column: string; type: string }> = [
+  // stock_prices'a sonradan eklenen "name" kolonu — longName'ı saklar
+  { table: 'stock_prices', column: 'name', type: 'TEXT' },
   { table: 'funds', column: 'isin', type: 'TEXT' },
   { table: 'funds', column: 'risk_score', type: 'INTEGER' },
   { table: 'funds', column: 'kap_url', type: 'TEXT' },

@@ -10,7 +10,7 @@ import { correlation } from '../analytics/correlation.js';
 import type { PricePoint } from '../analytics/returns.js';
 import { getDb } from '../db/index.js';
 import { getMarketDigest, getOrGenerateAiSummary } from '../services/ai.js';
-import { getStockPrice, getCachedStockPrice } from '../scripts/ingestStockPrices.js';
+import { getStockPrice, getCachedStockPrice, getStockChart } from '../scripts/ingestStockPrices.js';
 
 // TEFAS'ta işlem gören fon filtresi — tüm özet/ranking endpoint'lerinde kullanılır.
 // İşlem görmeyen fonlar (kapalı/özel satış) para akışı/en iyi liste gibi genel
@@ -751,7 +751,15 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
     const totalMv = holders.reduce((a, h) => a + (h.market_value ?? 0), 0);
     const avgWeight = holders.reduce((a, h) => a + h.weight, 0) / holders.length;
     const maxWeight = Math.max(...holders.map((h) => h.weight));
-    const name = holders[0]!.asset_name;
+
+    // İsim kaynak sırası: stock_prices.name (Yahoo longName) > broker_rec.name
+    // > fund_holdings.asset_name (fallback; genelde sadece ticker). Böylece
+    // "AMZN US" yerine "Amazon.com, Inc." gösterilebilir.
+    const priceRow = db
+      .prepare(`SELECT name FROM stock_prices WHERE ticker = ? AND name IS NOT NULL`)
+      .get(t) as { name: string | null } | undefined;
+    const brokerRow = brokers.find((b) => b.name && b.name !== t);
+    const name = priceRow?.name ?? brokerRow?.name ?? holders[0]!.asset_name;
 
     // Primary broker (hedef fiyat yayınlayanlar arasında market cap en büyüğü)
     const withTarget = brokers.filter((b) => b.target_price !== null && b.target_price > 0);
@@ -814,6 +822,21 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
       return reply.code(404).send({ error: 'Fiyat bulunamadı' });
     }
     return result;
+  });
+
+  // Hisse tarihsel grafik — Yahoo chart API + 1dk cache.
+  // period: 1d/5d/1m/3m/6m/1y/5y/max — intraday (1d/5d) için dakika bazlı,
+  // diğerleri daily/weekly bar.
+  app.get('/stocks/:ticker/chart', async (req, reply) => {
+    const { ticker } = req.params as { ticker: string };
+    const { period = '1y' } = req.query as { period?: string };
+    let decoded = ticker;
+    try { decoded = decodeURIComponent(ticker); } catch { /* leave as-is */ }
+    const valid = ['1d', '5d', '1m', '3m', '6m', '1y', '5y', 'max'];
+    const p = valid.includes(period) ? period : '1y';
+    const chart = await getStockChart(decoded, p as '1d' | '5d' | '1m' | '3m' | '6m' | '1y' | '5y' | 'max');
+    if (!chart) return reply.code(404).send({ error: 'Grafik bulunamadı' });
+    return chart;
   });
 
   // Stock logo manifest — tüm ticker'lar için logo URL'i / fallback durumu.

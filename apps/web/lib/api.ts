@@ -436,10 +436,21 @@ export const api = {
       }>;
     }>(`/api/funds/${encodeURIComponent(code)}/analyst-consensus`),
 
+  stockChart: (ticker: string, period: '1d' | '5d' | '1m' | '3m' | '6m' | '1y' | '5y' | 'max' = '1y') =>
+    fetchJson<{
+      ticker: string;
+      yahooSymbol: string;
+      period: string;
+      interval: string;
+      currency: string | null;
+      points: Array<{ date: number; price: number }>;
+    }>(`/api/stocks/${encodeURIComponent(ticker)}/chart?period=${period}`),
+
   stockPrice: (ticker: string) =>
     fetchJson<{
       ticker: string;
       yahooSymbol: string;
+      name: string | null;
       price: number | null;
       previous: number | null;
       changePct: number | null;
