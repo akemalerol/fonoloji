@@ -5,6 +5,7 @@ import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 import Fastify from 'fastify';
 import { registerCron } from './cron/index.js';
+import adminInboxRoutes from "./routes/admin-inbox.js";
 import { getDb } from './db/index.js';
 import { requireApiKey } from './auth/middleware.js';
 import { PLANS } from './auth/plans.js';
@@ -230,7 +231,13 @@ const ALLOWED_UA = [
 await app.register(
   async (inner) => {
     // UA allowlist/blocklist — programatik erişimi /v1/*'e yönlendir.
+    // Loopback (Next.js SSR 127.0.0.1 → 4000) her zaman muaf — UA'sı olmasa bile.
     inner.addHook('onRequest', async (req, reply) => {
+      const cf = req.headers['cf-connecting-ip'] as string | undefined;
+      if (!cf) {
+        const ip = req.ip ?? '';
+        if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') return;
+      }
       const ua = (req.headers['user-agent'] as string) ?? '';
       if (ALLOWED_UA.some((re) => re.test(ua))) return;
       if (!ua || BLOCKED_UA.some((re) => re.test(ua))) {
@@ -316,6 +323,7 @@ await app.register(trackRoute, { prefix: '/api' });
 
 // Admin routes at /admin-api/* (cookie-based, role=admin).
 await app.register(adminRoute, { prefix: '/admin-api' });
+await app.register(adminInboxRoutes, { prefix: '/admin-api' });
 
 // Public plans listing (convenience for pricing page).
 app.get('/plans', async () => ({ items: Object.values(PLANS) }));

@@ -52,10 +52,50 @@ interface TvSearchItem {
   logo?: { logoid?: string };
 }
 
-/** TV'den ticker için logoid bul. null = TV kapsamında yok. */
-async function lookupLogoid(ticker: string): Promise<string | null> {
-  const url =
-    `https://symbol-search.tradingview.com/symbol_search/?text=${encodeURIComponent(ticker)}&type=stock&exchange=BIST`;
+// Bloomberg "TICKER XX" exchange suffix'leri → TV'nin exchange adı.
+// Kapsamlı değil; öne çıkan major borsaları kapsar.
+const BLOOMBERG_EXCHANGE_MAP: Record<string, string> = {
+  US: '',              // NASDAQ veya NYSE - filter'sız ara
+  LN: 'LSE',           // London
+  BB: 'EURONEXT',      // Brussels (Euronext)
+  FP: 'EURONEXT',      // Paris (Euronext)
+  NA: 'EURONEXT',      // Amsterdam (Euronext)
+  GY: 'XETR',          // Frankfurt / XETRA
+  GR: 'XETR',          // Germany
+  SW: 'SIX',           // Switzerland SIX
+  SM: 'BME',           // Madrid
+  IM: 'BIT',           // Italy Borsa Italiana
+  JP: 'TSE',           // Tokyo
+  HK: 'HKEX',          // Hong Kong
+  KS: 'KRX',           // Korea
+  AU: 'ASX',           // Australia
+  CN: 'TSX',           // Canada Toronto
+  SP: 'SSE',           // Shanghai
+};
+
+// Preferred exchange order — birden fazla match varsa bunlara öncelik
+const EXCHANGE_PREFERENCE = [
+  'BIST', 'NASDAQ', 'NYSE', 'LSE', 'XETR', 'EURONEXT', 'SIX',
+  'TSE', 'HKEX', 'KRX', 'BME', 'BIT', 'ASX', 'TSX', 'SSE',
+];
+
+/** Bloomberg format'ı parçala: "AAL LN" → { base: "AAL", exchange: "LSE" } */
+function parseBloombergTicker(raw: string): { base: string; exchange: string | null } {
+  const parts = raw.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    const suffix = parts[parts.length - 1]!.toUpperCase();
+    const mapped = BLOOMBERG_EXCHANGE_MAP[suffix];
+    if (mapped !== undefined) {
+      return { base: parts.slice(0, -1).join(' '), exchange: mapped || null };
+    }
+  }
+  return { base: raw, exchange: null };
+}
+
+async function tvSearch(text: string, exchange: string | null = null): Promise<TvSearchItem[]> {
+  const params = new URLSearchParams({ text, type: 'stock' });
+  if (exchange) params.set('exchange', exchange);
+  const url = `https://symbol-search.tradingview.com/symbol_search/?${params.toString()}`;
   const res = await fetch(url, {
     headers: {
       'User-Agent': UA,
@@ -66,23 +106,71 @@ async function lookupLogoid(ticker: string): Promise<string | null> {
     signal: AbortSignal.timeout(10_000),
   });
   if (!res.ok) throw new Error(`TV search HTTP ${res.status}`);
-  const text = await res.text();
-  // TV sometimes wraps in {"symbols":[...]} sometimes returns array directly
-  let items: TvSearchItem[];
+  const text2 = await res.text();
   try {
-    const parsed = JSON.parse(text) as TvSearchItem[] | { symbols: TvSearchItem[] };
-    items = Array.isArray(parsed) ? parsed : (parsed.symbols ?? []);
+    const parsed = JSON.parse(text2) as TvSearchItem[] | { symbols: TvSearchItem[] };
+    return Array.isArray(parsed) ? parsed : (parsed.symbols ?? []);
   } catch {
-    return null;
+    return [];
   }
-  // İlk stock tipi + BIST exchange + aynı ticker match
-  const cleanTicker = ticker.toUpperCase();
-  const match = items.find((i) => {
-    const sym = (i.symbol ?? '').replace(/<[^>]+>/g, '').toUpperCase();
-    return sym === cleanTicker && (i.exchange === 'BIST' || !i.exchange);
-  }) ?? items[0];
-  const logoid = match?.logoid ?? match?.logo?.logoid ?? null;
-  return logoid && typeof logoid === 'string' ? logoid : null;
+}
+
+/** TV'den ticker için logoid bul. Strateji:
+ *  1. Ticker Bloomberg format ise (AAL LN) → parçala, mapped exchange ile ara
+ *  2. Önce BIST filter ile ara
+ *  3. Olmazsa filter'sız ara (NASDAQ/NYSE/LSE yakala)
+ *  4. Match: symbol == base ticker AND tercih edilen exchange'e göre sırala */
+async function lookupLogoid(ticker: string): Promise<string | null> {
+  const { base, exchange: bloombergEx } = parseBloombergTicker(ticker);
+  const cleanBase = base.trim().toUpperCase();
+
+  // Search queue: önce Bloomberg exchange, sonra BIST, sonra filter'sız
+  const searches: Array<{ text: string; exchange: string | null }> = [];
+  if (bloombergEx) {
+    searches.push({ text: cleanBase, exchange: bloombergEx });
+  } else {
+    searches.push({ text: cleanBase, exchange: 'BIST' });
+  }
+  searches.push({ text: cleanBase, exchange: null });
+
+  for (const s of searches) {
+    const items = await tvSearch(s.text, s.exchange);
+    if (items.length === 0) continue;
+
+    // 1) Exact symbol match
+    const exactMatches = items.filter((i) => {
+      const sym = (i.symbol ?? '').replace(/<[^>]+>/g, '').toUpperCase();
+      return sym === cleanBase && i.type === 'stock';
+    });
+
+    if (exactMatches.length > 0) {
+      // Preferred exchange'e göre sırala
+      exactMatches.sort((a, b) => {
+        const ai = EXCHANGE_PREFERENCE.indexOf(a.exchange ?? '');
+        const bi = EXCHANGE_PREFERENCE.indexOf(b.exchange ?? '');
+        const aScore = ai === -1 ? 999 : ai;
+        const bScore = bi === -1 ? 999 : bi;
+        return aScore - bScore;
+      });
+      const best = exactMatches[0]!;
+      const logoid = best.logoid ?? best.logo?.logoid ?? null;
+      if (logoid) return logoid;
+    }
+
+    // 2) Bloomberg variant için ilk type='stock' match yeterli
+    if (s.exchange) {
+      const firstStock = items.find((i) => i.type === 'stock');
+      if (firstStock) {
+        const logoid = firstStock.logoid ?? firstStock.logo?.logoid ?? null;
+        if (logoid) return logoid;
+      }
+    }
+
+    // 3) 10ms bekle (rate limit)
+    await new Promise((r) => setTimeout(r, 80));
+  }
+
+  return null;
 }
 
 /** TV CDN'inden SVG indir. */
