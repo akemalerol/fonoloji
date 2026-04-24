@@ -308,7 +308,13 @@ export function AnalystConsensusCard(props: Props) {
                       onClick={() => hasMultiple && setOpenRow((v) => (v === it.ticker ? null : it.ticker))}
                     >
                       <td className="px-3 py-2">
-                        <div className="font-mono text-xs font-semibold text-foreground">{it.ticker}</div>
+                        <a
+                          href={`/hisse/${it.ticker}`}
+                          className="font-mono text-xs font-semibold text-foreground hover:text-brand-300 hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {it.ticker}
+                        </a>
                         {it.name && (
                           <div className="truncate text-[10px] text-muted-foreground" title={it.name}>
                             {it.name}

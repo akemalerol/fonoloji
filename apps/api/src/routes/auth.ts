@@ -268,6 +268,60 @@ export const authRoute: FastifyPluginAsync = async (app) => {
     };
   });
 
+  // Günlük kullanım geçmişi — panel üzerindeki sparkline/bar chart için.
+  // Son N günü döndürür, sıfır gün de dahil (UTC bazlı).
+  app.get('/usage/daily', async (req, reply) => {
+    const user = await readSession(req);
+    if (!user) return reply.code(401).send({ error: 'Oturum yok' });
+    const { days = '30' } = req.query as { days?: string };
+    const n = Math.min(Math.max(Number(days) || 30, 7), 90);
+    const db = getDb();
+    // User'ın tüm api_key_id'leri üzerinden son N gün
+    const rows = db
+      .prepare(
+        `SELECT date(ts/1000, 'unixepoch') AS day,
+                COUNT(*) AS count,
+                SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) AS errors
+         FROM api_requests
+         WHERE user_id = ? AND ts >= ?
+         GROUP BY day
+         ORDER BY day`,
+      )
+      .all(user.id, Date.now() - n * 86_400_000) as Array<{
+      day: string;
+      count: number;
+      errors: number;
+    }>;
+
+    // Eksik günleri 0 ile doldur
+    const byDay = new Map(rows.map((r) => [r.day, r]));
+    const result: Array<{ day: string; count: number; errors: number }> = [];
+    for (let i = n - 1; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 86_400_000);
+      const key = d.toISOString().slice(0, 10);
+      const existing = byDay.get(key);
+      result.push({
+        day: key,
+        count: existing?.count ?? 0,
+        errors: existing?.errors ?? 0,
+      });
+    }
+
+    // Ek: en sık çağrılan 5 endpoint
+    const topEndpoints = db
+      .prepare(
+        `SELECT path, COUNT(*) AS count
+         FROM api_requests
+         WHERE user_id = ? AND ts >= ?
+         GROUP BY path
+         ORDER BY count DESC
+         LIMIT 5`,
+      )
+      .all(user.id, Date.now() - n * 86_400_000) as Array<{ path: string; count: number }>;
+
+    return { days: result, topEndpoints };
+  });
+
   app.post(
     '/api-keys',
     { preHandler: requireAuth },

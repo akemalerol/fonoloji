@@ -1,6 +1,7 @@
 import { Book } from 'lucide-react';
 import Link from 'next/link';
 import { GLOSSARY, GLOSSARY_CATEGORIES, type GlossaryEntry } from '@/lib/glossary';
+import { GlossarySearch } from './search';
 
 export const metadata = {
   title: 'Finansal terimler sözlüğü — Fonoloji',
@@ -45,6 +46,8 @@ export default function SozlukPage() {
         </p>
       </div>
 
+      <GlossarySearch />
+
       {/* Kategori navigasyonu */}
       <nav className="sticky top-16 z-20 -mx-4 mb-8 border-b border-border/40 bg-background/90 px-4 py-3 backdrop-blur">
         <div className="flex flex-wrap gap-2">
@@ -76,7 +79,11 @@ export default function SozlukPage() {
             <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
               {entries.map((e) => (
                 <article key={e.slug} id={e.slug} className="panel scroll-mt-28 p-6">
-                  <h3 className="serif text-xl leading-tight">{e.title}</h3>
+                  <Link href={`/sozluk/${e.slug}`} className="group block">
+                    <h3 className="serif text-xl leading-tight group-hover:text-brand-200">
+                      {e.title}
+                    </h3>
+                  </Link>
                   <p className="mt-2 text-sm italic text-brand-300/80">{e.short}</p>
                   <div className="mt-4 space-y-3 text-sm leading-relaxed text-muted-foreground">
                     {renderBody(e.body)}
@@ -101,13 +108,13 @@ export default function SozlukPage() {
                         const target = GLOSSARY.find((x) => x.slug === r);
                         if (!target) return null;
                         return (
-                          <a
+                          <Link
                             key={r}
-                            href={`#${r}`}
+                            href={`/sozluk/${r}`}
                             className="rounded-full border border-border/50 bg-background/40 px-2 py-0.5 text-[10px] text-muted-foreground hover:border-brand-500/40 hover:text-foreground"
                           >
                             {target.title}
-                          </a>
+                          </Link>
                         );
                       })}
                     </div>

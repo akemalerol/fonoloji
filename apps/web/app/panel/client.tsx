@@ -1,6 +1,6 @@
 'use client';
 
-import { Copy, LogOut, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Activity, Copy, LogOut, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
@@ -9,16 +9,34 @@ import { Button } from '@/components/ui/button';
 import type { Me } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
+interface UsageDaily {
+  days: Array<{ day: string; count: number; errors: number }>;
+  topEndpoints: Array<{ path: string; count: number }>;
+}
+
 export function PanelClient({ initial }: { initial: Me }) {
   const router = useRouter();
   const [me, setMe] = React.useState(initial);
+  const [usageDaily, setUsageDaily] = React.useState<UsageDaily | null>(null);
   const [newKey, setNewKey] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
 
+  const loadUsage = React.useCallback(async () => {
+    try {
+      const res = await fetch('/auth/usage/daily?days=30', { credentials: 'include' });
+      if (res.ok) setUsageDaily((await res.json()) as UsageDaily);
+    } catch {}
+  }, []);
+
+  React.useEffect(() => {
+    loadUsage();
+  }, [loadUsage]);
+
   async function refresh() {
     const res = await fetch('/auth/me', { credentials: 'include' });
     if (res.ok) setMe((await res.json()) as Me);
+    loadUsage();
   }
 
   async function createKey() {
@@ -115,6 +133,30 @@ export function PanelClient({ initial }: { initial: Me }) {
           <p className="mt-3 text-xs text-muted-foreground">
             %{pct} kullanıldı · dönem {usage.period} · sıfırlama ayın 1'i
           </p>
+
+          {/* Son 30 gün kullanım mini bar chart */}
+          {usageDaily && usageDaily.days.length > 0 && (
+            <div className="mt-5 border-t border-border/40 pt-4">
+              <div className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground">
+                <Activity className="h-3 w-3" /> Son 30 gün
+              </div>
+              <UsageBars data={usageDaily.days} />
+              {usageDaily.topEndpoints.length > 0 && (
+                <div className="mt-4 space-y-1">
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Sık kullandığın endpointler
+                  </div>
+                  {usageDaily.topEndpoints.slice(0, 5).map((e) => (
+                    <div key={e.path} className="flex items-center justify-between text-[11px]">
+                      <span className="truncate font-mono text-muted-foreground">{e.path}</span>
+                      <span className="font-mono text-foreground">{e.count.toLocaleString('tr-TR')}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {pct > 85 && (
             <Link
               href="/iletisim"
@@ -219,6 +261,57 @@ export function PanelClient({ initial }: { initial: Me }) {
             <code>{`curl -H "X-API-Key: fon_..." https://fonoloji.com/v1/funds/TTE`}</code>
           </pre>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** Son N gün API istek sayısı — inline SVG bar chart, heavy library yok. */
+function UsageBars({ data }: { data: Array<{ day: string; count: number; errors: number }> }) {
+  const max = Math.max(1, ...data.map((d) => d.count));
+  const width = 100;
+  const barW = width / data.length;
+  const height = 40;
+  const total = data.reduce((a, b) => a + b.count, 0);
+  const avg = total / data.length;
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${width} ${height + 6}`} className="w-full" preserveAspectRatio="none">
+        {data.map((d, i) => {
+          const h = (d.count / max) * height;
+          const errH = (d.errors / max) * height;
+          const x = i * barW;
+          const y = height - h;
+          const isLast = i === data.length - 1;
+          return (
+            <g key={d.day}>
+              <title>{`${d.day}: ${d.count.toLocaleString('tr-TR')} istek${d.errors ? ` · ${d.errors} hata` : ''}`}</title>
+              <rect
+                x={x + barW * 0.1}
+                y={y}
+                width={barW * 0.8}
+                height={h}
+                fill={isLast ? 'currentColor' : 'currentColor'}
+                className={isLast ? 'text-brand-400' : 'text-muted-foreground/50'}
+              />
+              {d.errors > 0 && (
+                <rect
+                  x={x + barW * 0.1}
+                  y={height - errH}
+                  width={barW * 0.8}
+                  height={errH}
+                  className="text-rose-400/70"
+                  fill="currentColor"
+                />
+              )}
+            </g>
+          );
+        })}
+      </svg>
+      <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+        <span>Toplam {total.toLocaleString('tr-TR')} · ort {Math.round(avg)}/gün</span>
+        <span>{data[data.length - 1]?.count.toLocaleString('tr-TR')} bugün</span>
       </div>
     </div>
   );

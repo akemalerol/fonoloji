@@ -436,6 +436,61 @@ export const api = {
       }>;
     }>(`/api/funds/${encodeURIComponent(code)}/analyst-consensus`),
 
+  stockDetail: (ticker: string) =>
+    fetchJson<{
+      ticker: string;
+      name: string;
+      reportDate: string;
+      summary: {
+        fundCount: number;
+        totalMarketValueTl: number;
+        avgWeightInFunds: number;
+        maxWeightInFunds: number;
+      };
+      primaryBroker: string | null;
+      consensus: {
+        brokerCount: number;
+        targetRange: { min: number; max: number; avg: number } | null;
+        recommendation: string | null;
+        closePrice: number | null;
+        peRatio: number | null;
+        marketCapMnTl: number | null;
+      };
+      brokers: Array<{
+        broker: string;
+        name: string | null;
+        close_price: number | null;
+        target_price: number | null;
+        potential_pct: number | null;
+        recommendation: string | null;
+        pe_ratio: number | null;
+        market_cap_mn_tl: number | null;
+        entry_date: string | null;
+        report_title: string | null;
+        report_url: string | null;
+        as_of_date: string;
+      }>;
+      holders: Array<{
+        code: string;
+        weight: number;
+        market_value: number | null;
+        asset_name: string;
+        fund_name: string;
+        category: string | null;
+        management_company: string | null;
+        current_price: number | null;
+        return_1m: number | null;
+        return_1y: number | null;
+        volatility_90: number | null;
+      }>;
+      ownershipTrend: Array<{
+        report_date: string;
+        fund_count: number;
+        avg_weight: number;
+        total_mv_mn: number | null;
+      }>;
+    }>(`/api/stocks/${encodeURIComponent(ticker)}`),
+
   goldLive: () =>
     fetchJson<{
       items: Array<{

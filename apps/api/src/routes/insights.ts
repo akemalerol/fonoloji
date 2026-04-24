@@ -662,6 +662,141 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
     };
   });
 
+  // Hisse detay — fund_holdings'te geçen bir ticker için tüm fonlar,
+  // analist konsensüsü, zaman içinde ağırlık trendi, top holder fonlar.
+  // /hisse/[ticker] sayfasını besler.
+  app.get('/stocks/:ticker', async (req, reply) => {
+    const { ticker } = req.params as { ticker: string };
+    const t = ticker.trim().toUpperCase();
+    const db = getDb();
+
+    // Son rapor tarihindeki holdings
+    const latestReport = db
+      .prepare(`SELECT MAX(report_date) AS d FROM fund_holdings WHERE asset_code = ?`)
+      .get(t) as { d: string | null };
+    if (!latestReport.d) return reply.code(404).send({ error: 'Hisse bulunamadı' });
+
+    // Bu hisseyi tutan fonlar — son raporda
+    const holders = db
+      .prepare(
+        `SELECT h.code, h.weight, h.market_value, h.asset_name,
+                f.name AS fund_name, f.category, f.management_company,
+                m.current_price, m.return_1m, m.return_1y, m.volatility_90
+         FROM fund_holdings h
+         JOIN funds f ON f.code = h.code
+         LEFT JOIN metrics m ON m.code = h.code
+         WHERE h.asset_code = ? AND h.report_date = ?
+         ORDER BY h.weight DESC`,
+      )
+      .all(t, latestReport.d) as Array<{
+      code: string;
+      weight: number;
+      market_value: number | null;
+      asset_name: string;
+      fund_name: string;
+      category: string | null;
+      management_company: string | null;
+      current_price: number | null;
+      return_1m: number | null;
+      return_1y: number | null;
+      volatility_90: number | null;
+    }>;
+
+    if (holders.length === 0) return reply.code(404).send({ error: 'Hisse bulunamadı' });
+
+    // Analist konsensüsü — broker_recommendations
+    const brokers = db
+      .prepare(
+        `SELECT broker, name, close_price, target_price, potential_pct, recommendation,
+                pe_ratio, market_cap_mn_tl, entry_date, report_title, report_url, as_of_date
+         FROM broker_recommendations
+         WHERE ticker = ?
+         ORDER BY broker`,
+      )
+      .all(t) as Array<{
+      broker: string;
+      name: string | null;
+      close_price: number | null;
+      target_price: number | null;
+      potential_pct: number | null;
+      recommendation: string | null;
+      pe_ratio: number | null;
+      market_cap_mn_tl: number | null;
+      entry_date: string | null;
+      report_title: string | null;
+      report_url: string | null;
+      as_of_date: string;
+    }>;
+
+    // Zaman içinde fon sahipliği sayısı (aylık)
+    const ownershipTrend = db
+      .prepare(
+        `SELECT report_date, COUNT(DISTINCT code) AS fund_count,
+                ROUND(AVG(weight), 2) AS avg_weight,
+                ROUND(SUM(market_value) / 1000000, 2) AS total_mv_mn
+         FROM fund_holdings
+         WHERE asset_code = ?
+         GROUP BY report_date
+         ORDER BY report_date`,
+      )
+      .all(t) as Array<{
+      report_date: string;
+      fund_count: number;
+      avg_weight: number;
+      total_mv_mn: number | null;
+    }>;
+
+    // Özet
+    const totalMv = holders.reduce((a, h) => a + (h.market_value ?? 0), 0);
+    const avgWeight = holders.reduce((a, h) => a + h.weight, 0) / holders.length;
+    const maxWeight = Math.max(...holders.map((h) => h.weight));
+    const name = holders[0]!.asset_name;
+
+    // Primary broker (hedef fiyat yayınlayanlar arasında market cap en büyüğü)
+    const withTarget = brokers.filter((b) => b.target_price !== null && b.target_price > 0);
+    const primary =
+      withTarget.length > 0
+        ? withTarget.reduce((best, cur) => {
+            const bm = best.market_cap_mn_tl ?? -Infinity;
+            const cm = cur.market_cap_mn_tl ?? -Infinity;
+            return cm > bm ? cur : best;
+          })
+        : null;
+    const targets = withTarget.map((b) => b.target_price as number);
+    const targetRange =
+      targets.length > 0
+        ? {
+            min: Math.min(...targets),
+            max: Math.max(...targets),
+            avg: targets.reduce((a, c) => a + c, 0) / targets.length,
+          }
+        : null;
+
+    return {
+      ticker: t,
+      name,
+      reportDate: latestReport.d,
+      summary: {
+        fundCount: holders.length,
+        totalMarketValueTl: totalMv,
+        avgWeightInFunds: Math.round(avgWeight * 100) / 100,
+        maxWeightInFunds: Math.round(maxWeight * 100) / 100,
+      },
+      primaryBroker: primary?.broker ?? null,
+      consensus: {
+        brokerCount: brokers.length,
+        targetRange,
+        recommendation: primary?.recommendation ?? null,
+        closePrice: primary?.close_price ?? null,
+        peRatio: primary?.pe_ratio ?? null,
+        marketCapMnTl: primary?.market_cap_mn_tl ?? null,
+      },
+      brokers,
+      holders,
+      ownershipTrend,
+    };
+  });
+
   // Tek hisse için tüm aracı kurumların görüşü — stock detay sayfası için.
   app.get('/stocks/:ticker/recommendations', async (req) => {
     const { ticker } = req.params as { ticker: string };

@@ -5,6 +5,7 @@ import Script from 'next/script';
 import { DisclaimerBanner } from '@/components/site/disclaimer-banner';
 import { SiteFooter } from '@/components/site/footer';
 import { SiteHeader } from '@/components/site/header';
+import { MobileBottomTabs } from '@/components/site/mobile-bottom-tabs';
 import { PageTracker } from '@/components/site/page-tracker';
 import '@/app/globals.css';
 
@@ -170,8 +171,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
         <DisclaimerBanner />
         <SiteHeader />
-        <main className="animate-fade-in">{children}</main>
+        <main className="animate-fade-in pb-16 md:pb-0">{children}</main>
         <SiteFooter />
+        <MobileBottomTabs />
         <PageTracker />
         <Script
           strategy="afterInteractive"
