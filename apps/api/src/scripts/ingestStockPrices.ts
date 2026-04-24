@@ -21,10 +21,11 @@
  *                NESN SW   → NESN.SW
  */
 
-import yahooFinance from 'yahoo-finance2';
+import YahooFinance from 'yahoo-finance2';
 import { getDb } from '../db/index.js';
 
-// yahoo-finance2 survey notice'ı sessizleştir (stderr spam'i engelle)
+// yahoo-finance2 v3+ constructor pattern (eski default export deprecated)
+const yahooFinance = new YahooFinance();
 (yahooFinance as unknown as { suppressNotices?: (notices: string[]) => void }).suppressNotices?.([
   'yahooSurvey',
 ]);
@@ -122,16 +123,83 @@ export interface StockPrice {
   fetchedAt: number;
 }
 
-/** yahoo-finance2 chart API ile ChartMeta çek — kütüphane crumb/cookie
- *  yönetimini otomatik yapıyor ve 429 retry başarısız olsa bile boş döner. */
+/** yahoo-finance2 v3+ chart API. period1/period2 Date objeleri zorunlu.
+ *  Meta'da regularMarketTime + currentTradingPeriod Date objesi olarak gelir,
+ *  bizim ChartMeta tipi unix-seconds tutuyor — convertMeta ile dönüştür. */
+interface YfChartMeta {
+  currency?: string;
+  symbol?: string;
+  exchangeName?: string;
+  instrumentType?: string;
+  regularMarketPrice?: number;
+  regularMarketTime?: Date | number;
+  chartPreviousClose?: number;
+  previousClose?: number;
+  regularMarketDayHigh?: number;
+  regularMarketDayLow?: number;
+  regularMarketVolume?: number;
+  currentTradingPeriod?: {
+    pre?: { start?: Date | number; end?: Date | number };
+    regular?: { start?: Date | number; end?: Date | number };
+    post?: { start?: Date | number; end?: Date | number };
+  };
+}
+
+function toUnixSeconds(v: Date | number | undefined): number | undefined {
+  if (v === undefined) return undefined;
+  if (typeof v === 'number') return v;
+  return Math.floor(v.getTime() / 1000);
+}
+
+function convertMeta(yf: YfChartMeta): ChartMeta {
+  return {
+    currency: yf.currency,
+    symbol: yf.symbol,
+    exchangeName: yf.exchangeName,
+    instrumentType: yf.instrumentType,
+    regularMarketPrice: yf.regularMarketPrice,
+    regularMarketTime: toUnixSeconds(yf.regularMarketTime),
+    chartPreviousClose: yf.chartPreviousClose,
+    previousClose: yf.previousClose,
+    regularMarketDayHigh: yf.regularMarketDayHigh,
+    regularMarketDayLow: yf.regularMarketDayLow,
+    regularMarketVolume: yf.regularMarketVolume,
+    currentTradingPeriod: yf.currentTradingPeriod
+      ? {
+          pre: yf.currentTradingPeriod.pre
+            ? {
+                start: toUnixSeconds(yf.currentTradingPeriod.pre.start) ?? 0,
+                end: toUnixSeconds(yf.currentTradingPeriod.pre.end) ?? 0,
+              }
+            : undefined,
+          regular: yf.currentTradingPeriod.regular
+            ? {
+                start: toUnixSeconds(yf.currentTradingPeriod.regular.start) ?? 0,
+                end: toUnixSeconds(yf.currentTradingPeriod.regular.end) ?? 0,
+              }
+            : undefined,
+          post: yf.currentTradingPeriod.post
+            ? {
+                start: toUnixSeconds(yf.currentTradingPeriod.post.start) ?? 0,
+                end: toUnixSeconds(yf.currentTradingPeriod.post.end) ?? 0,
+              }
+            : undefined,
+        }
+      : undefined,
+  };
+}
+
 async function fetchFromYahoo(yahooSymbol: string): Promise<ChartMeta | null> {
   try {
+    const now = new Date();
+    const yesterday = new Date(now.getTime() - 2 * 86_400_000); // 2 gün geriye — hafta sonu edge case
     const res = await yahooFinance.chart(yahooSymbol, {
+      period1: yesterday,
+      period2: now,
       interval: '1d',
-      range: '1d',
     });
-    const meta = (res as { meta?: ChartMeta }).meta;
-    return meta ?? null;
+    const yfMeta = (res as unknown as { meta?: YfChartMeta }).meta;
+    return yfMeta ? convertMeta(yfMeta) : null;
   } catch {
     return null;
   }
