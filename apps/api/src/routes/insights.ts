@@ -10,6 +10,7 @@ import { correlation } from '../analytics/correlation.js';
 import type { PricePoint } from '../analytics/returns.js';
 import { getDb } from '../db/index.js';
 import { getMarketDigest, getOrGenerateAiSummary } from '../services/ai.js';
+import { getStockPrice, getCachedStockPrice } from '../scripts/ingestStockPrices.js';
 
 // TEFAS'ta işlem gören fon filtresi — tüm özet/ranking endpoint'lerinde kullanılır.
 // İşlem görmeyen fonlar (kapalı/özel satış) para akışı/en iyi liste gibi genel
@@ -797,62 +798,22 @@ export const insightsRoute: FastifyPluginAsync = async (app) => {
     };
   });
 
-  // Hisse canlı fiyatı — client polling için hafif endpoint.
+  // Hisse canlı fiyatı — on-demand Yahoo v8 chart fetch + 30sn in-memory cache.
   // Ticker format: BIST "ASELS", Bloomberg "AMZN US", URL encoded "AMZN%20US".
-  // marketState: REGULAR (açık/canlı), CLOSED (son kapanış), PRE/POST (AH seans).
-  // isDelayed: Yahoo'nun gecikme bilgisi (BIST ~15dk, US regular ~0).
+  // marketState: REGULAR (açık), CLOSED (kapalı → son kapanış), PRE/POST.
+  // isDelayed: BIST 15dk gecikmeli, US/EU realtime.
   app.get('/stocks/:ticker/price', async (req, reply) => {
     const { ticker } = req.params as { ticker: string };
     let decoded = ticker;
     try { decoded = decodeURIComponent(ticker); } catch { /* leave as-is */ }
-    const t = decoded.trim().toUpperCase();
-    const db = getDb();
-    const row = db
-      .prepare(
-        `SELECT ticker, yahoo_symbol, price, previous, change_pct, day_high, day_low,
-                volume, currency, market_state, fetched_at
-         FROM stock_prices WHERE ticker = ?`,
-      )
-      .get(t) as
-      | {
-          ticker: string;
-          yahoo_symbol: string;
-          price: number | null;
-          previous: number | null;
-          change_pct: number | null;
-          day_high: number | null;
-          day_low: number | null;
-          volume: number | null;
-          currency: string | null;
-          market_state: string | null;
-          fetched_at: number;
-        }
-        | undefined;
-    if (!row) return reply.code(404).send({ error: 'Fiyat bulunamadı' });
-
-    // Yahoo yanıtında exchangeDataDelayedBy bilgisini tutmuyoruz, ama
-    // ticker formatından (BIST .IS) 15 dk gecikmeli olduğunu biliyoruz.
-    // US regular ve çoğu Avrupa realtime — sadece BIST ve bazı Asya
-    // için gecikme göster.
-    const isBistTicker = !decoded.includes(' ') && /^[A-Z0-9]{3,6}$/.test(t);
-    const isDelayed = isBistTicker; // BIST Yahoo feed 15dk delay
-    const delayMinutes = isDelayed ? 15 : 0;
-
-    return {
-      ticker: row.ticker,
-      yahooSymbol: row.yahoo_symbol,
-      price: row.price,
-      previous: row.previous,
-      changePct: row.change_pct,
-      dayHigh: row.day_high,
-      dayLow: row.day_low,
-      volume: row.volume,
-      currency: row.currency,
-      marketState: row.market_state,
-      isDelayed,
-      delayMinutes,
-      fetchedAt: row.fetched_at,
-    };
+    const result = await getStockPrice(decoded);
+    if (!result) {
+      // Yahoo'dan çekilemedi — DB'de son bilinen değer varsa onu dön
+      const fallback = getCachedStockPrice(decoded);
+      if (fallback) return fallback;
+      return reply.code(404).send({ error: 'Fiyat bulunamadı' });
+    }
+    return result;
   });
 
   // Stock logo manifest — tüm ticker'lar için logo URL'i / fallback durumu.

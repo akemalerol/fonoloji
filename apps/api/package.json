@@ -36,6 +36,7 @@
     "pino-pretty": "^11.2.2",
     "playwright": "^1.47.2",
     "resend": "^4.8.0",
+    "yahoo-finance2": "^3.14.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

@@ -1,56 +1,59 @@
 /**
- * Hisse fiyatı canlı ingest — Yahoo Finance quote API.
+ * Hisse fiyatı on-demand ingest — Yahoo Finance v8 chart endpoint.
  *
- * Kapsam: fund_holdings + broker_recommendations'ten tüm unique ticker'lar.
- *   - BIST: "ASELS" → Yahoo "ASELS.IS"
- *   - US plain: "AAPL" → Yahoo "AAPL" (zaten)
- *   - Bloomberg: "AAL LN" → Yahoo "IAG.L" (exchange suffix map ile)
+ * Eski v7 /finance/quote crumb+cookie auth gerektirmeye başladı (429 dönüyor).
+ * Bunun yerine v8 /finance/chart per-symbol (crumb'sız, public). Batch yok ama
+ * sadece görüntülenen ticker'a fetch atıyoruz → scale problem yok.
  *
- * Yahoo quote endpoint: up to ~100 symbols per request.
- *   https://query1.finance.yahoo.com/v7/finance/quote?symbols=X,Y,Z
- * Yanıt alanları: regularMarketPrice, regularMarketPreviousClose,
- * regularMarketChangePercent, regularMarketDayHigh/Low, regularMarketVolume,
- * marketState, currency, exchangeDataDelayedBy, exchange.
+ * Strateji:
+ *   - `getStockPrice(ticker)` — in-memory cache 30sn TTL
+ *   - Cache miss → Yahoo v8 chart → parse meta → DB'ye yaz → cache
+ *   - UI'nin /api/stocks/:ticker/price çağrısı bunu çağırır
+ *   - Cron/interval YOK — pasif ticker'lara fetch atmıyoruz
+ *   - Piyasa kapalıysa: son fetched_at DB'den serve, yine cache'e koy
  *
- * Piyasa kapalıysa "regularMarketPrice" SON KAPANIŞ fiyatıdır — ayrıca
- * bir şey yapmaya gerek yok. marketState field'ı 'REGULAR' (açık),
- * 'CLOSED' (kapalı), 'PRE'/'POST' (pre/post-market) dönüyor.
- *
- * exchangeDataDelayedBy: saniye cinsinden gecikme. BIST ~15dk (900s),
- * US genelde 0 veya 15dk. UI'da bu değer > 0 ise "gecikmeli" ibaresi.
+ * yahoo_symbol map:
+ *   BIST         ASELS     → ASELS.IS
+ *   US plain     AAPL      → AAPL
+ *   Bloomberg    AMZN US   → AMZN
+ *                AAL LN    → IAG.L (… hmm ticker mismatch)
+ *                ABI BB    → ABI.BR
+ *                NESN SW   → NESN.SW
  */
 
+import yahooFinance from 'yahoo-finance2';
 import { getDb } from '../db/index.js';
+
+// yahoo-finance2 survey notice'ı sessizleştir (stderr spam'i engelle)
+(yahooFinance as unknown as { suppressNotices?: (notices: string[]) => void }).suppressNotices?.([
+  'yahooSurvey',
+]);
 
 const UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36';
 
-// Bloomberg suffix → Yahoo exchange suffix. '' = no suffix needed (US).
 const YAHOO_SUFFIX: Record<string, string> = {
   US: '',
-  LN: '.L',     // London
-  BB: '.BR',    // Brussels
-  FP: '.PA',    // Paris
-  NA: '.AS',    // Amsterdam
-  GY: '.DE',    // Germany XETRA
+  LN: '.L',
+  BB: '.BR',
+  FP: '.PA',
+  NA: '.AS',
+  GY: '.DE',
   GR: '.DE',
-  SW: '.SW',    // Swiss SIX
-  SM: '.MC',    // Madrid
-  IM: '.MI',    // Milan
-  JP: '.T',     // Tokyo
-  HK: '.HK',    // Hong Kong
-  KS: '.KS',    // Korea
-  AU: '.AX',    // Australia
-  CN: '.TO',    // Canada Toronto
-  SP: '.SS',    // Shanghai
+  SW: '.SW',
+  SM: '.MC',
+  IM: '.MI',
+  JP: '.T',
+  HK: '.HK',
+  KS: '.KS',
+  AU: '.AX',
+  CN: '.TO',
+  SP: '.SS',
 };
 
-/** Ticker'ı Yahoo Finance symbol'üne çevir. */
-function toYahoo(ticker: string): string | null {
+export function toYahooSymbol(ticker: string): string | null {
   const t = ticker.trim().toUpperCase();
   if (!t) return null;
-
-  // Bloomberg format: "AMZN US", "AAL LN", "005930 KS"
   const bloomberg = /^(\S+)\s+([A-Z]{2})$/.exec(t);
   if (bloomberg) {
     const base = bloomberg[1]!;
@@ -59,115 +62,104 @@ function toYahoo(ticker: string): string | null {
     if (yh === undefined) return null;
     return base + yh;
   }
-
-  // Boşluksuz: BIST muhtemelen — 3-6 harf
-  if (/^[A-Z][A-Z0-9]{2,5}$/.test(t)) {
-    // Bir US ticker'ı olabilir (AAPL, MSFT). Ama bizim DB'de genelde "AAPL US" formatında.
-    // Düz format → BIST varsayalım (.IS suffix). AAPL gibi plain-US tickers zaten
-    // Bloomberg format ile giriyorsa ikinci defa işlenmez.
-    return `${t}.IS`;
-  }
-
+  if (/^[A-Z][A-Z0-9]{2,5}$/.test(t)) return `${t}.IS`; // BIST varsayımı
   return null;
 }
 
-interface YahooQuote {
-  symbol: string;
+// v8 chart response shape
+interface ChartMeta {
+  currency?: string;
+  symbol?: string;
+  exchangeName?: string;
+  instrumentType?: string;
   regularMarketPrice?: number;
-  regularMarketPreviousClose?: number;
-  regularMarketChangePercent?: number;
+  regularMarketTime?: number;           // unix seconds — son price zaman damgası
+  chartPreviousClose?: number;
+  previousClose?: number;
   regularMarketDayHigh?: number;
   regularMarketDayLow?: number;
   regularMarketVolume?: number;
-  currency?: string;
-  marketState?: 'REGULAR' | 'CLOSED' | 'PRE' | 'POST' | 'PREPRE' | 'POSTPOST';
-  exchange?: string;
-  exchangeDataDelayedBy?: number;
-}
-
-interface YahooResponse {
-  quoteResponse?: {
-    result: YahooQuote[];
-    error: unknown;
+  marketState?: string;
+  exchangeTimezoneName?: string;
+  gmtoffset?: number;
+  currentTradingPeriod?: {
+    pre?: { start: number; end: number; timezone?: string; gmtoffset?: number };
+    regular?: { start: number; end: number; timezone?: string; gmtoffset?: number };
+    post?: { start: number; end: number; timezone?: string; gmtoffset?: number };
   };
 }
 
-/** 100'lük gruplar halinde Yahoo quote çek. */
-async function fetchQuotes(symbols: string[]): Promise<Map<string, YahooQuote>> {
-  const result = new Map<string, YahooQuote>();
-  const batchSize = 100;
-  for (let i = 0; i < symbols.length; i += batchSize) {
-    const chunk = symbols.slice(i, i + batchSize);
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(chunk.join(','))}`;
-    try {
-      const res = await fetch(url, {
-        headers: {
-          'User-Agent': UA,
-          Accept: 'application/json',
-        },
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (!res.ok) {
-        console.warn(`[stock-prices] Yahoo batch ${i}: HTTP ${res.status}`);
-        continue;
-      }
-      const json = (await res.json()) as YahooResponse;
-      const quotes = json.quoteResponse?.result ?? [];
-      for (const q of quotes) {
-        if (q.symbol) result.set(q.symbol, q);
-      }
-    } catch (err) {
-      console.warn(`[stock-prices] batch ${i} hata:`, err instanceof Error ? err.message : err);
-    }
-    // Rate limit — jitter
-    if (i + batchSize < symbols.length) {
-      await new Promise((r) => setTimeout(r, 200 + Math.random() * 200));
-    }
+/** v8 chart'ta `marketState` alanı yok. currentTradingPeriod ile infer et. */
+function inferMarketState(meta: ChartMeta): string {
+  const now = Math.floor(Date.now() / 1000);
+  const tp = meta.currentTradingPeriod;
+  if (tp?.regular && now >= tp.regular.start && now <= tp.regular.end) return 'REGULAR';
+  if (tp?.pre && now >= tp.pre.start && now <= tp.pre.end) return 'PRE';
+  if (tp?.post && now >= tp.post.start && now <= tp.post.end) return 'POST';
+  return 'CLOSED';
+}
+
+interface ChartResponse {
+  chart?: {
+    result?: Array<{ meta: ChartMeta }> | null;
+    error?: { code?: string; description?: string } | null;
+  };
+}
+
+export interface StockPrice {
+  ticker: string;
+  yahooSymbol: string;
+  price: number | null;
+  previous: number | null;
+  changePct: number | null;
+  dayHigh: number | null;
+  dayLow: number | null;
+  volume: number | null;
+  currency: string | null;
+  marketState: string | null;
+  isDelayed: boolean;
+  delayMinutes: number;
+  fetchedAt: number;
+}
+
+/** yahoo-finance2 chart API ile ChartMeta çek — kütüphane crumb/cookie
+ *  yönetimini otomatik yapıyor ve 429 retry başarısız olsa bile boş döner. */
+async function fetchFromYahoo(yahooSymbol: string): Promise<ChartMeta | null> {
+  try {
+    const res = await yahooFinance.chart(yahooSymbol, {
+      interval: '1d',
+      range: '1d',
+    });
+    const meta = (res as { meta?: ChartMeta }).meta;
+    return meta ?? null;
+  } catch {
+    return null;
   }
-  return result;
 }
 
-export interface PriceIngestStats {
-  total: number;
-  ok: number;
-  noQuote: number;
-  durationMs: number;
+/** Ticker Bloomberg format mı? (boşluk içeriyor → gecikme BIST dışı olasılığı) */
+function detectDelay(ticker: string): { isDelayed: boolean; delayMinutes: number } {
+  const hasSpace = ticker.includes(' ');
+  // Boşluksuz = BIST varsayımı → 15dk gecikmeli
+  if (!hasSpace) return { isDelayed: true, delayMinutes: 15 };
+  // Bloomberg: US regular realtime, diğerleri genelde near-realtime
+  return { isDelayed: false, delayMinutes: 0 };
 }
 
-export async function runStockPricesIngest(): Promise<PriceIngestStats> {
-  const t0 = Date.now();
+function upsertPrice(
+  ticker: string,
+  yahoo: string,
+  meta: ChartMeta | null,
+  errorMsg: string | null,
+): void {
   const db = getDb();
-
-  // fund_holdings + broker_recommendations'ten unique ticker'lar
-  const tickers = db
-    .prepare(
-      `WITH t AS (
-         SELECT DISTINCT asset_code AS ticker FROM fund_holdings
-         WHERE asset_type='stock' AND asset_code IS NOT NULL
-           AND length(asset_code) BETWEEN 3 AND 12
-           AND asset_code GLOB '[A-Z0-9]*'
-           AND NOT asset_code GLOB '*[^A-Z0-9 ]*'
-         UNION
-         SELECT DISTINCT ticker FROM broker_recommendations
-       )
-       SELECT ticker FROM t ORDER BY ticker`,
-    )
-    .all() as Array<{ ticker: string }>;
-
-  // Ticker → Yahoo symbol map
-  const yahooMap = new Map<string, string>(); // ticker → yahoo_symbol
-  for (const { ticker } of tickers) {
-    const yh = toYahoo(ticker);
-    if (yh) yahooMap.set(ticker, yh);
-  }
-
-  const symbols = Array.from(new Set(yahooMap.values()));
-  console.log(`[stock-prices] ${tickers.length} ticker, ${symbols.length} unique Yahoo sembolü`);
-
-  const quotes = await fetchQuotes(symbols);
-  console.log(`[stock-prices] ${quotes.size} quote geldi`);
-
-  const upsert = db.prepare(
+  const now = Date.now();
+  const price = meta?.regularMarketPrice ?? null;
+  const prev = meta?.previousClose ?? meta?.chartPreviousClose ?? null;
+  const changePct = price !== null && prev !== null && prev > 0
+    ? ((price - prev) / prev) * 100
+    : null;
+  db.prepare(
     `INSERT INTO stock_prices
        (ticker, yahoo_symbol, price, previous, change_pct, day_high, day_low,
         volume, currency, market_state, last_error, fetched_at)
@@ -184,146 +176,147 @@ export async function runStockPricesIngest(): Promise<PriceIngestStats> {
        market_state = excluded.market_state,
        last_error = excluded.last_error,
        fetched_at = excluded.fetched_at`,
+  ).run(
+    ticker,
+    yahoo,
+    price,
+    prev,
+    changePct,
+    meta?.regularMarketDayHigh ?? null,
+    meta?.regularMarketDayLow ?? null,
+    meta?.regularMarketVolume ?? null,
+    meta?.currency ?? null,
+    meta ? inferMarketState(meta) : null,
+    errorMsg,
+    now,
   );
+}
 
-  let ok = 0;
-  let noQuote = 0;
-  const now = Date.now();
+// In-memory cache: ticker → { fetchedAt, data }
+interface CacheEntry {
+  fetchedAt: number;
+  data: StockPrice | null;
+}
+const priceCache = new Map<string, CacheEntry>();
+const LIVE_TTL_MS = 30_000;
+const CLOSED_TTL_MS = 5 * 60_000;
 
-  const tx = db.transaction(() => {
-    for (const { ticker } of tickers) {
-      const yh = yahooMap.get(ticker);
-      if (!yh) continue;
-      const q = quotes.get(yh);
-      if (!q || q.regularMarketPrice === undefined) {
-        upsert.run(ticker, yh, null, null, null, null, null, null, null, null, 'no_quote', now);
-        noQuote++;
-        continue;
+/** Ticker için fiyat — cache varsa o, yoksa Yahoo'dan çek + DB'ye yaz + cache. */
+export async function getStockPrice(ticker: string): Promise<StockPrice | null> {
+  const t = ticker.trim().toUpperCase();
+  const yahoo = toYahooSymbol(t);
+  if (!yahoo) return null;
+
+  const cached = priceCache.get(t);
+  if (cached) {
+    const age = Date.now() - cached.fetchedAt;
+    const ttl = cached.data?.marketState === 'REGULAR' || cached.data?.marketState === 'PRE' || cached.data?.marketState === 'POST'
+      ? LIVE_TTL_MS
+      : CLOSED_TTL_MS;
+    if (age < ttl) return cached.data;
+  }
+
+  const meta = await fetchFromYahoo(yahoo);
+  upsertPrice(t, yahoo, meta, meta ? null : 'fetch_failed');
+
+  const delay = detectDelay(t);
+  const price = meta?.regularMarketPrice ?? null;
+  const prev = meta?.previousClose ?? meta?.chartPreviousClose ?? null;
+  const changePct = price !== null && prev !== null && prev > 0
+    ? ((price - prev) / prev) * 100
+    : null;
+
+  const result: StockPrice | null = meta
+    ? {
+        ticker: t,
+        yahooSymbol: yahoo,
+        price,
+        previous: prev,
+        changePct,
+        dayHigh: meta.regularMarketDayHigh ?? null,
+        dayLow: meta.regularMarketDayLow ?? null,
+        volume: meta.regularMarketVolume ?? null,
+        currency: meta.currency ?? null,
+        marketState: inferMarketState(meta),
+        isDelayed: delay.isDelayed,
+        delayMinutes: delay.delayMinutes,
+        fetchedAt: Date.now(),
       }
-      upsert.run(
-        ticker,
-        yh,
-        q.regularMarketPrice,
-        q.regularMarketPreviousClose ?? null,
-        q.regularMarketChangePercent ?? null,
-        q.regularMarketDayHigh ?? null,
-        q.regularMarketDayLow ?? null,
-        q.regularMarketVolume ?? null,
-        q.currency ?? null,
-        q.marketState ?? null,
-        null,
-        now,
-      );
-      ok++;
-    }
-  });
-  tx();
+    : null;
 
-  const durationMs = Date.now() - t0;
-  console.log(`[stock-prices] ok=${ok} nq=${noQuote} ${Math.round(durationMs / 1000)}s`);
-  return { total: tickers.length, ok, noQuote, durationMs };
+  priceCache.set(t, { fetchedAt: Date.now(), data: result });
+  return result;
 }
 
-// --- Market hours logic & scheduler ---
-
-interface MarketWindow {
-  /** Exchange kodu (Bloomberg suffix veya 'BIST') */
-  exchange: string;
-  /** TR saati — hafta içi açılış saati (0-23) + dakika */
-  openHourTr: number;
-  openMinTr: number;
-  /** TR saati — hafta içi kapanış (exchangeDataDelayedBy dahil "finalize" ekstra ekle) */
-  closeHourTr: number;
-  closeMinTr: number;
-}
-
-// Ana piyasaların TR saatine göre açılış-kapanış penceresi.
-// Kapanıştan sonra gelecek 30 dk (exchange delay + mum tamamlaması) içinde
-// fetch'e devam ediyoruz — finalize son değer düzgün yazılsın.
-const MARKETS: MarketWindow[] = [
-  { exchange: 'BIST', openHourTr: 10, openMinTr: 0, closeHourTr: 19, closeMinTr: 0 },    // BIST 10:00-18:00 + 60dk cushion
-  { exchange: 'US',   openHourTr: 16, openMinTr: 30, closeHourTr: 23, closeMinTr: 30 },  // NYSE 16:30-23:00 TR + cushion
-  { exchange: 'LN',   openHourTr: 10, openMinTr: 0, closeHourTr: 18, closeMinTr: 30 },   // LSE 10:00-18:30 TR (winter)
-  { exchange: 'BB',   openHourTr: 10, openMinTr: 0, closeHourTr: 18, closeMinTr: 30 },
-  { exchange: 'FP',   openHourTr: 10, openMinTr: 0, closeHourTr: 18, closeMinTr: 30 },
-  { exchange: 'NA',   openHourTr: 10, openMinTr: 0, closeHourTr: 18, closeMinTr: 30 },
-  { exchange: 'GY',   openHourTr: 10, openMinTr: 0, closeHourTr: 18, closeMinTr: 30 },
-  { exchange: 'GR',   openHourTr: 10, openMinTr: 0, closeHourTr: 18, closeMinTr: 30 },
-  { exchange: 'SW',   openHourTr: 10, openMinTr: 0, closeHourTr: 18, closeMinTr: 30 },
-  { exchange: 'SM',   openHourTr: 10, openMinTr: 0, closeHourTr: 18, closeMinTr: 30 },
-  { exchange: 'IM',   openHourTr: 10, openMinTr: 0, closeHourTr: 18, closeMinTr: 30 },
-  { exchange: 'JP',   openHourTr: 3,  openMinTr: 0, closeHourTr: 9,  closeMinTr: 0 },
-  { exchange: 'HK',   openHourTr: 4,  openMinTr: 30, closeHourTr: 11, closeMinTr: 0 },
-  { exchange: 'KS',   openHourTr: 3,  openMinTr: 0, closeHourTr: 9,  closeMinTr: 30 },
-  { exchange: 'AU',   openHourTr: 1,  openMinTr: 0, closeHourTr: 7,  closeMinTr: 0 },
-  { exchange: 'CN',   openHourTr: 16, openMinTr: 30, closeHourTr: 23, closeMinTr: 30 },
-];
-
-function getTrParts(now: Date): { weekday: number; hour: number; minute: number } {
-  // TR saati = UTC+3 (DST yok)
-  const utc = now.getUTCHours() * 60 + now.getUTCMinutes();
-  const trTotal = (utc + 3 * 60) % (24 * 60);
-  const trHour = Math.floor(trTotal / 60);
-  const trMinute = trTotal % 60;
-  // Weekday hesaplaması (TR'ye göre kaydırıldı)
-  const utcDay = now.getUTCDay();
-  const dayAdj = utc + 3 * 60 >= 24 * 60 ? 1 : 0;
-  const weekday = (utcDay + dayAdj) % 7;
-  return { weekday, hour: trHour, minute: trMinute };
-}
-
-function isAnyMarketOpen(now: Date): boolean {
-  const { weekday, hour, minute } = getTrParts(now);
-  // 0 = Pazar, 6 = Cumartesi — hafta sonu tüm borsalar kapalı
-  if (weekday === 0 || weekday === 6) return false;
-  const nowMin = hour * 60 + minute;
-  return MARKETS.some((m) => {
-    const open = m.openHourTr * 60 + m.openMinTr;
-    const close = m.closeHourTr * 60 + m.closeMinTr;
-    return nowMin >= open && nowMin <= close;
-  });
-}
-
-let tickerRunning = false;
-let lastSuccessAt = 0;
-
-/**
- * Her 30 sn bir tick. Piyasa kapalıysa skip. Overlap protection.
- * Next.js SSR / client polling buradan beslenecek.
- */
-export function schedulePriceTicker(log: { info: (m: string) => void; error: (...a: unknown[]) => void }): void {
-  const tick = async () => {
-    if (tickerRunning) return;
-    if (!isAnyMarketOpen(new Date())) return;
-    tickerRunning = true;
-    try {
-      const r = await runStockPricesIngest();
-      lastSuccessAt = Date.now();
-      if (r.ok > 0 && Date.now() - (lastSuccessAt - r.durationMs) > 60_000) {
-        log.info(`[stock-prices] ok=${r.ok} nq=${r.noQuote} ${Math.round(r.durationMs / 1000)}s`);
+/** DB'den son bilinen fiyatı getir (fetch yapmadan, yalnız read). */
+export function getCachedStockPrice(ticker: string): StockPrice | null {
+  const t = ticker.trim().toUpperCase();
+  const cached = priceCache.get(t);
+  if (cached?.data) return cached.data;
+  const row = getDb()
+    .prepare(
+      `SELECT yahoo_symbol, price, previous, change_pct, day_high, day_low,
+              volume, currency, market_state, fetched_at
+       FROM stock_prices WHERE ticker = ?`,
+    )
+    .get(t) as
+    | {
+        yahoo_symbol: string;
+        price: number | null;
+        previous: number | null;
+        change_pct: number | null;
+        day_high: number | null;
+        day_low: number | null;
+        volume: number | null;
+        currency: string | null;
+        market_state: string | null;
+        fetched_at: number;
       }
-    } catch (err) {
-      log.error('[stock-prices] tick hata:', err);
-    } finally {
-      tickerRunning = false;
-    }
+    | undefined;
+  if (!row || row.price === null) return null;
+  const delay = detectDelay(t);
+  return {
+    ticker: t,
+    yahooSymbol: row.yahoo_symbol,
+    price: row.price,
+    previous: row.previous,
+    changePct: row.change_pct,
+    dayHigh: row.day_high,
+    dayLow: row.day_low,
+    volume: row.volume,
+    currency: row.currency,
+    marketState: row.market_state,
+    isDelayed: delay.isDelayed,
+    delayMinutes: delay.delayMinutes,
+    fetchedAt: row.fetched_at,
   };
-
-  // İlk tick boot'tan 5 sn sonra; sonra her 30 sn.
-  setTimeout(tick, 5_000);
-  setInterval(tick, 30_000);
-  log.info('[stock-prices] ticker 30sn interval ile başladı (market hours aware)');
 }
 
-// CLI entry
+// Ana ticker ingest fonksiyonu (backward compat; eski cron için no-op).
+export async function runStockPricesIngest(): Promise<{ total: number; ok: number; noQuote: number; durationMs: number }> {
+  // On-demand mimari — bulk fetch yok. Return boş.
+  return { total: 0, ok: 0, noQuote: 0, durationMs: 0 };
+}
+
+export function schedulePriceTicker(_log: { info: (m: string) => void; error: (...a: unknown[]) => void }): void {
+  // On-demand cache yeterli — interval fetch yok.
+  // İleride "popular tickers warm-up" eklenebilir.
+}
+
+// CLI — tek symbol test
 if (import.meta.url === `file://${process.argv[1]}`) {
-  runStockPricesIngest()
-    .then((s) => {
-      console.log('[stock-prices] OK', s);
+  const ticker = process.argv[2];
+  if (!ticker) {
+    console.error('Usage: node ingestStockPrices.js <TICKER>');
+    process.exit(1);
+  }
+  getStockPrice(ticker)
+    .then((p) => {
+      console.log(JSON.stringify(p, null, 2));
       process.exit(0);
     })
     .catch((err) => {
-      console.error('[stock-prices] HATA', err);
+      console.error('HATA', err);
       process.exit(1);
     });
 }
