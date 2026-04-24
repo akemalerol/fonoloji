@@ -199,18 +199,20 @@ interface TickerRow {
  *  stock_logos mevcut durumlarıyla birleştir. */
 function listTickersToProcess(all: boolean): TickerRow[] {
   const db = getDb();
-  // BIST ticker formatı: 3-6 büyük harf/rakam, boşluk/özel karakter yok.
-  // Yabancı hisse (AAPL, ABBV, AAL LN) filtre dışı — TV'ye gereksiz sorgu atmamak için.
+  // Ticker formatları:
+  //   - BIST: 3-6 harf/rakam (ASELS, BIMAS, A1CAP)
+  //   - Bloomberg: "TICKER XX" (AMZN US, AAL LN, ABI BB, NESN SW...)
+  //   - US raw: 3-5 harf (AAPL, MSFT, TSLA) — yalnızca US format, exchange suffix yok
+  // Filter: harf+rakam+boşluk, 3-12 uzunluk, özel karakter yok.
   const rows = db
     .prepare(
       `WITH source_tickers AS (
          SELECT DISTINCT asset_code AS t FROM fund_holdings
          WHERE asset_type = 'stock'
            AND asset_code IS NOT NULL
-           AND length(asset_code) BETWEEN 3 AND 6
-           AND asset_code NOT LIKE '% %'
+           AND length(asset_code) BETWEEN 3 AND 12
            AND asset_code GLOB '[A-Z0-9]*'
-           AND NOT asset_code GLOB '*[^A-Z0-9]*'
+           AND NOT asset_code GLOB '*[^A-Z0-9 ]*'
          UNION
          SELECT DISTINCT ticker AS t FROM broker_recommendations
        )

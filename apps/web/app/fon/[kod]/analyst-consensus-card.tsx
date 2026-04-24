@@ -2,7 +2,7 @@
 
 import { ChevronDown, ChevronUp, TrendingUp, Users } from 'lucide-react';
 import * as React from 'react';
-import { StockLogo } from '@/components/fx/stock-logo';
+import { ExchangeBadge, StockLogo } from '@/components/fx/stock-logo';
 import { cn, formatPrice } from '@/lib/utils';
 
 // "Analist Konsensüsü" kartı — fon portföyündeki hisseler için birden fazla aracı
@@ -316,7 +316,10 @@ export function AnalystConsensusCard(props: Props) {
                         >
                           <StockLogo ticker={it.ticker} size={22} />
                           <div className="min-w-0">
-                            <div className="font-mono text-xs font-semibold text-foreground">{it.ticker}</div>
+                            <div className="flex items-center gap-1 font-mono text-xs font-semibold text-foreground">
+                              <span>{it.ticker}</span>
+                              <ExchangeBadge ticker={it.ticker} />
+                            </div>
                             {it.name && (
                               <div className="truncate text-[10px] text-muted-foreground" title={it.name}>
                                 {it.name}

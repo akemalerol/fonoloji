@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { api } from '@/lib/api';
-import { StockLogo } from '@/components/fx/stock-logo';
+import { ExchangeBadge, StockLogo } from '@/components/fx/stock-logo';
 import { cn, formatCompact, formatPrice } from '@/lib/utils';
 
 export const revalidate = 600;
@@ -93,7 +93,10 @@ export default async function StockPage({ params }: { params: { ticker: string }
                 Hisse · {fmtReportDate(data.reportDate)} portföy raporu
               </div>
               <h1 className="display text-balance text-4xl leading-[1.02] md:text-6xl">
-                <span className="font-mono text-brand-400">{data.ticker}</span>
+                <span className="inline-flex items-center gap-2">
+                  <span className="font-mono text-brand-400">{data.ticker}</span>
+                  <ExchangeBadge ticker={data.ticker} className="text-xs" />
+                </span>
                 <span className="block text-xl text-muted-foreground md:text-2xl">{data.name}</span>
               </h1>
             </div>
